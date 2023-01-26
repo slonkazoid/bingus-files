@@ -4,7 +4,7 @@
   "description": "floppa-files competitor",
   "main": "index.js",
   "scripts": {
-    "start": "node .",
+    "start": "env NODE_ENV=production node .",
     "test": "echo \"No test specified\""
   },
   "author": "Ali Furkan Yıldız",

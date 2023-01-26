@@ -70,7 +70,27 @@ app.set("view engine", "ejs");
 app.set("views", "views");
 
 app.use((req, res, next) => {
-	info(`Request ${req.method} ${req.path} by ${req.ip}`);
+	let requestReceiveTime = performance.now();
+	debug(`Received ${req.method} request ${req.path} by ${req.ip}`);
+	res.on("close", () => {
+		info(
+			`${(
+				[
+					,
+					,
+					color.black.bgGreenBright,
+					color.black.bgYellowBright,
+					color.white.bgRed,
+					color.white.bgRed,
+				][Math.floor(res.statusCode / 100)] ?? color.white.bgBlack
+			)(res.statusCode)} ${req.method} ${req.path} by ${
+				req.ip
+			} done in ${color.bold(
+				((performance.now() - requestReceiveTime)).toFixed(2) +
+					"ms"
+			)}`
+		);
+	});
 	next();
 });
 app.use(express.static("static"));
@@ -83,6 +103,8 @@ app.use(
 app.get("/", (req, res) => {
 	res.render("index", {
 		max_upload: config.max_upload,
+		max_upload_pretty: prettyFileSize(config.max_upload),
+		host: req.protocol + "://" + req.headers.host,
 	});
 });
 app.get("/stats", (req, res) => {
