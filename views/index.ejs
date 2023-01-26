@@ -30,6 +30,15 @@
 				</tr>
 			</table>
 		</div>
+		<p>
+			You can use curl to upload files (the proper way):
+			<code>curl <span id="stub0"></span>/up -F 'file=@file.mp4'</code>
+		</p>
+		<script>
+			document
+				.getElementById("stub0")
+				.replaceWith(location.protocol + "//" + location.host);
+		</script>
 		<br />
 		<div>
 			<input type="file" name="file" id="file" /> <br />
