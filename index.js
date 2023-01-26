@@ -40,7 +40,6 @@ const config = {
 	upload_dir: "files",
 	max_upload: 1000 ** 3, // 1 GB
 };
-let server;
 
 info("Starting up...");
 
@@ -50,43 +49,16 @@ const parseConfig = () => {
 
 	try {
 		let _config = JSON.parse(fs.readFileSync(CONFIG_FILE));
-		let shouldRelisten = false;
 		for (let key in _config) {
 			if (config.hasOwnProperty(key)) {
-				// If directories change, make sure they exist
-				if (
-					(key === "upload_dir" || key === "temp_dir") &&
-					config[key] !== _config[key]
-				)
+				if (key === "upload_dir" || key === "temp_dir")
 					checkDir(_config[key]);
-				// If host or port changes, start listening there
-				if (
-					server &&
-					(key === "host" || key === "port") &&
-					config[key] !== _config[key]
-				) {
-					shouldRelisten = true;
-				}
-
 				config[key] = _config[key];
 			} else
 				debug(
 					`Found unknown option ${color.bold(
 						key
 					)} in config file, ignoring.`
-				);
-		}
-		if (shouldRelisten) {
-			debug("Host or port changed, relistening");
-			server.close();
-			server = app
-				.listen(_config.port, _config.host)
-				.on("listening", () =>
-					info(
-						`Relistening on http://${color.bold(
-							_config.host
-						)}:${color.bold(_config.port)}/`
-					)
 				);
 		}
 	} catch (e) {
@@ -193,19 +165,14 @@ app.post(
 
 // Seconds
 let appListenTime = 0;
-server = app
-	.listen(
-		config.port,
-		config.host,
-		() => (appListenTime = new Date().getSeconds())
-	)
-	.on("listening", () =>
-		info(
-			`Listening on http://${color.bold(config.host)}:${color.bold(
-				config.port
-			)}/`
-		)
+app.listen(config.port, config.host, () => {
+	appListenTime = new Date().getSeconds();
+	info(
+		`Listening on http://${color.bold(config.host)}:${color.bold(
+			config.port
+		)}/`
 	);
+});
 
 debug(
 	`Initialized express app ${color.bold(

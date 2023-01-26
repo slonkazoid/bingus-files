@@ -22,7 +22,7 @@ module.exports = {
 		);
 	},
 	debug() {
-		if (process.env.DEBUG) return;
+		if (process.env.DEBUG === undefined) return;
 		console.log(
 			getTime(),
 			color.black.bgWhiteBright("DEBUG"),
