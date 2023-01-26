@@ -64,11 +64,11 @@
 				else return n + " B";
 			};
 
-			const max_upload = parseInt(
+			let max_upload = parseInt(
 				document.getElementById("maxFileSize").innerText
 			);
-			document.getElementById("fillMaxFileSize").innerText =
-				prettyFileSize(max_upload);
+			let fillMaxFileSize = document.getElementById("fillMaxFileSize");
+			fillMaxFileSize.innerText = prettyFileSize(max_upload);
 
 			let out = document.getElementById("out");
 			const outLog = (obj) => {
@@ -132,6 +132,8 @@
 				fetch("/stats")
 					.then((response) => response.json())
 					.then((stats) => {
+						max_upload = stats["max_upload"];
+						fillMaxFileSize.innerText = prettyFileSize(max_upload);
 						fillStorageUsed.innerText = prettyFileSize(
 							parseFloat(stats["storage_used"])
 						);

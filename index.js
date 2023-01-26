@@ -69,16 +69,16 @@ const app = express();
 app.set("view engine", "ejs");
 app.set("views", "views");
 
+app.use((req, res, next) => {
+	info(`Request ${req.method} ${req.path} by ${req.ip}`);
+	next();
+});
 app.use(express.static("static"));
 app.use(
 	express.static(config.upload_dir, {
 		index: false,
 	})
 );
-app.use((req, res, next) => {
-	info(`New request ${req.method} ${req.path} by ${req.ip}`);
-	next();
-});
 
 app.get("/", (req, res) => {
 	res.render("index", {
@@ -94,6 +94,7 @@ app.get("/stats", (req, res) => {
 		storage_used: size,
 		file_count: dir.length,
 		uptime: Date.now() - appListenTime,
+		max_upload: config.max_upload,
 	});
 });
 
@@ -124,7 +125,11 @@ app.post(
 let appListenTime = 0;
 app.listen(parseInt(config.port), config.host, () => {
 	appListenTime = Date.now();
-	info(`Listening on http://${color.bold(config.host)}:${color.bold(config.port)}/`);
+	info(
+		`Listening on http://${color.bold(config.host)}:${color.bold(
+			config.port
+		)}/`
+	);
 });
 
 debug(
