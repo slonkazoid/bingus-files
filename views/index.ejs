@@ -11,8 +11,21 @@
 		ok so floppa-files sucks and i wrote this because of that
 		<hr />
 		<h3>
-			Max upload size: <b id="fillMaxFileSize"> <%= max_upload_pretty %></b>
+			Max upload size:
+			<b id="fillMaxFileSize"> <%= max_upload_pretty %></b>
 		</h3>
+		<p>
+			You can use curl to upload files (the proper way):
+			<code>curl <%= host %>/up -F 'file=@file.mp4'</code>
+		</p>
+		<br />
+		<div>
+			<input type="file" name="file" id="file" /> <br />
+			<label for="file">choose file to upload</label>
+		</div>
+		<br />
+		<div id="out"></div>
+
 		<div style="display: none" id="stats">
 			<h4>Stats:</h4>
 			<table>
@@ -30,17 +43,6 @@
 				</tr>
 			</table>
 		</div>
-		<p>
-			You can use curl to upload files (the proper way):
-			<code>curl <%= host %>/up -F 'file=@file.mp4'</code>
-		</p>
-		<br />
-		<div>
-			<input type="file" name="file" id="file" /> <br />
-			<label for="file">choose file to upload</label>
-		</div>
-		<br />
-		<div id="out"></div>
 
 		<!-- values to use in script -->
 		<span style="display: none" id="maxFileSize"> <%= max_upload %> </span>
@@ -134,9 +136,8 @@
 						);
 						fillStoredFileCount.innerText = stats["file_count"];
 						fillUptime.innerText =
-							(parseFloat(stats["uptime"]) / 1000 / 3600).toFixed(
-								1
-							) + "h";
+							(parseFloat(stats["uptime"]) / 3600).toFixed(1) +
+							"h";
 						statsElement.style.display = "";
 					})
 					.catch((reason) => {

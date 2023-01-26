@@ -132,4 +132,4 @@ dist
 
 files/
 temp/
-config.env
+config.json

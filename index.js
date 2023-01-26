@@ -2,7 +2,6 @@ const { info, warn, error, debug } = require("./logger");
 const fs = require("fs");
 const path = require("path");
 const color = require("ansi-colors");
-const dotenv = require("dotenv");
 const express = require("express");
 const fileupload = require("express-fileupload");
 
@@ -16,50 +15,100 @@ const prettyFileSize = (n) => {
 	else if (n > 0.5 * 1000) return (n / 1000).toFixed(2) + " KB";
 	else return n + " B";
 };
+const checkDir = (dir) => {
+	debug(`Checking if ${color.bold(dir)} exists and is a directory`);
 
-const CONFIG_FILE = process.env.CONFIG_FILE ?? "config.env";
+	if (fs.existsSync(dir)) {
+		debug("Exists");
+		let filesStat = fs.statSync(dir);
+		if (!filesStat.isDirectory()) {
+			error(`${color.bold(dir)} exists but is not a directory!`);
+			process.exit(1);
+		}
+	} else {
+		debug("Doesn't exist, creating");
+		fs.mkdirSync(dir);
+	}
+};
+
+const CONFIG_FILE = process.env.CONFIG_FILE ?? "config.json";
 const config = {
 	// Defaults
 	host: "0.0.0.0",
-	port: "4040",
+	port: 4040,
+	temp_dir: "temp",
 	upload_dir: "files",
 	max_upload: 1000 ** 3, // 1 GB
-	temp_dir: "temp",
 };
+let server;
 
 info("Starting up...");
-debug("Loading configuration");
 
-let configLoadStartTime = performance.now();
+const parseConfig = () => {
+	debug("Loading configuration");
+	let configLoadStartTime = performance.now();
 
-const dotenvOutput = dotenv.config({
-	path: CONFIG_FILE,
-});
-if (dotenvOutput.error) {
-	warn(
-		`There was an error parsing ${color.bold(
-			CONFIG_FILE
-		)}, using default options.`
-	);
-	console.error(dotenvOutput.error);
-} else if (dotenvOutput.parsed) {
-	for (let key in dotenvOutput.parsed) {
-		if (config.hasOwnProperty(key)) {
-			config[key] = dotenvOutput.parsed[key];
-		} else
-			debug(
-				`Found unknown option ${color.bold(
-					key
-				)} in config file, ignoring.`
-			);
+	try {
+		let _config = JSON.parse(fs.readFileSync(CONFIG_FILE));
+		let shouldRelisten = false;
+		for (let key in _config) {
+			if (config.hasOwnProperty(key)) {
+				// If directories change, make sure they exist
+				if (
+					(key === "upload_dir" || key === "temp_dir") &&
+					config[key] !== _config[key]
+				)
+					checkDir(_config[key]);
+				// If host or port changes, start listening there
+				if (
+					server &&
+					(key === "host" || key === "port") &&
+					config[key] !== _config[key]
+				) {
+					shouldRelisten = true;
+				}
+
+				config[key] = _config[key];
+			} else
+				debug(
+					`Found unknown option ${color.bold(
+						key
+					)} in config file, ignoring.`
+				);
+		}
+		if (shouldRelisten) {
+			debug("Host or port changed, relistening");
+			server.close();
+			server = app
+				.listen(_config.port, _config.host)
+				.on("listening", () =>
+					info(
+						`Relistening on http://${color.bold(
+							_config.host
+						)}:${color.bold(_config.port)}/`
+					)
+				);
+		}
+	} catch (e) {
+		warn(`There was an error parsing the configuration file.`);
+		console.error(e);
 	}
-}
 
-debug(
-	`Loaded configuration in ${color.bold(
-		(performance.now() - configLoadStartTime).toFixed(2) + "µs"
-	)}`
-);
+	debug(
+		`Loaded configuration in ${color.bold(
+			(performance.now() - configLoadStartTime).toFixed(2) + "µs"
+		)}`
+	);
+};
+
+if (fs.existsSync(CONFIG_FILE)) {
+	parseConfig();
+	fs.watchFile(CONFIG_FILE, () => {
+		debug("Configuration file updated, reloading...");
+		parseConfig();
+	});
+} else warn("Configuration file does not exist, using default options.");
+
 debug("Initializing express app");
 
 let appStartTime = performance.now();
@@ -86,8 +135,7 @@ app.use((req, res, next) => {
 			)(res.statusCode)} ${req.method} ${req.path} by ${
 				req.ip
 			} done in ${color.bold(
-				((performance.now() - requestReceiveTime)).toFixed(2) +
-					"ms"
+				(performance.now() - requestReceiveTime).toFixed(2) + "ms"
 			)}`
 		);
 	});
@@ -115,7 +163,7 @@ app.get("/stats", (req, res) => {
 	res.send({
 		storage_used: size,
 		file_count: dir.length,
-		uptime: Date.now() - appListenTime,
+		uptime: Math.abs(new Date().getSeconds() - appListenTime), // I love floats, doubles and -0
 		max_upload: config.max_upload,
 	});
 });
@@ -143,41 +191,24 @@ app.post(
 	}
 );
 
-// Milliseconds
+// Seconds
 let appListenTime = 0;
-app.listen(parseInt(config.port), config.host, () => {
-	appListenTime = Date.now();
-	info(
-		`Listening on http://${color.bold(config.host)}:${color.bold(
-			config.port
-		)}/`
+server = app
+	.listen(
+		config.port,
+		config.host,
+		() => (appListenTime = new Date().getSeconds())
+	)
+	.on("listening", () =>
+		info(
+			`Listening on http://${color.bold(config.host)}:${color.bold(
+				config.port
+			)}/`
+		)
 	);
-});
 
 debug(
 	`Initialized express app ${color.bold(
 		(performance.now() - appStartTime).toFixed(2) + "µs"
 	)}`
 );
-debug(`Checking if ${color.bold(config.upload_dir)} exists and is a directory`);
-
-if (fs.existsSync(config.upload_dir)) {
-	debug("Exists");
-	let filesStat = fs.statSync(config.upload_dir);
-	if (!filesStat.isDirectory()) {
-		error(
-			`${color.bold(config.upload_dir)} exists but is not a directory!`
-		);
-		process.exit(1);
-	}
-} else {
-	debug("Doesn't exist, creating");
-	fs.mkdirSync(config.upload_dir);
-}
-
-debug(`Recreating ${color.bold(config.temp_dir)}`);
-
-fs.rmSync(config.temp_dir, { recursive: true, force: true });
-fs.mkdirSync(config.temp_dir);
-
-debug("Directory set up complete");
