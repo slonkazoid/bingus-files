@@ -124,7 +124,7 @@ app.post(
 let appListenTime = 0;
 app.listen(parseInt(config.port), config.host, () => {
 	appListenTime = Date.now();
-	info(`Listening on ${color.bold(config.host)}:${color.bold(config.port)}`);
+	info(`Listening on http://${color.bold(config.host)}:${color.bold(config.port)}/`);
 });
 
 debug(
