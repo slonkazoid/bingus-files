@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<%- include('partials/head') %>
+		<title>bingus-files</title>
+	</head>
+
+	<body>
+		<h1>bingus-files</h1>
+		ok so floppa-files sucks and i wrote this because of that
+		<hr />
+		<h3>
+			Max upload size: <b id="fillMaxFileSize"> <%= max_upload %> B </b>
+		</h3>
+		<div style="display: none" id="stats">
+			<h4>Stats:</h4>
+			<table>
+				<tr>
+					<td>Stored files</td>
+					<td><b id="fillStoredFileCount"></b></td>
+				</tr>
+				<tr>
+					<td>Storage used</td>
+					<td><b id="fillStorageUsed"></b></td>
+				</tr>
+				<tr>
+					<td>Uptime</td>
+					<td><b id="fillUptime"></b></td>
+				</tr>
+			</table>
+		</div>
+		<br />
+		<div>
+			<input type="file" name="file" id="file" /> <br />
+			<label for="file">choose file to upload</label>
+		</div>
+		<br />
+		<div id="out"></div>
+
+		<!-- values to use in script -->
+		<span style="display: none" id="maxFileSize"> <%= max_upload %> </span>
+
+		<script>
+			const prettyFileSize = (n) => {
+				if (n > 0.5 * 1000 ** 5)
+					return (n / 1000 ** 5).toFixed(2) + " PB";
+				else if (n > 0.5 * 1000 ** 4)
+					return (n / 1000 ** 4).toFixed(2) + " TB";
+				else if (n > 0.5 * 1000 ** 3)
+					return (n / 1000 ** 3).toFixed(2) + " GB";
+				else if (n > 0.5 * 1000 ** 2)
+					return (n / 1000 ** 2).toFixed(2) + " MB";
+				else if (n > 0.5 * 1000) return (n / 1000).toFixed(2) + " KB";
+				else return n + " B";
+			};
+
+			const max_upload = parseInt(
+				document.getElementById("maxFileSize").innerText
+			);
+			document.getElementById("fillMaxFileSize").innerText =
+				prettyFileSize(max_upload);
+
+			let out = document.getElementById("out");
+			const outLog = (obj) => {
+				out.append(obj);
+				out.append(document.createElement("br"));
+			};
+
+			let fileInput = document.getElementById("file");
+			fileInput.onchange = (e) => {
+				if (fileInput.files.length !== 1) return;
+				/** @type {File} */
+				let file = fileInput.files[0];
+				if (file.size > max_upload) {
+					alert("File too big! Choose another one.");
+					return;
+				}
+
+				outLog(
+					`Uploading file: ${file.name} (${prettyFileSize(
+						file.size
+					)})`
+				);
+				let fd = new FormData();
+				fd.set("file", file);
+				fetch("/up", {
+					method: "POST",
+					body: fd,
+				})
+					.then((response) => {
+						if (response.status === 200) return response.text();
+						else if (response.status === 413) {
+							alert("File too big! Choose another one.");
+							throw "File too big! Choose another one.";
+						} else {
+							throw `${response.status} ${response.statusText}`;
+						}
+					})
+					.then((name) => {
+						let a = document.createElement("a");
+						a.href = location.href + name;
+						a.target = "_blank";
+						a.innerText = `File uploaded: ${file.name}`;
+						outLog(a);
+						loadStats();
+					})
+					.catch((reason) => {
+						alert("An error has occured. See console for details.");
+						console.error(reason);
+					});
+			};
+		</script>
+		<script>
+			function loadStats() {
+				let statsElement = document.getElementById("stats");
+				let fillStorageUsed =
+					document.getElementById("fillStorageUsed");
+				let fillStoredFileCount = document.getElementById(
+					"fillStoredFileCount"
+				);
+				let fillUptime = document.getElementById("fillUptime");
+				fetch("/stats")
+					.then((response) => response.json())
+					.then((stats) => {
+						fillStorageUsed.innerText = prettyFileSize(
+							parseFloat(stats["storage_used"])
+						);
+						fillStoredFileCount.innerText = stats["file_count"];
+						fillUptime.innerText =
+							(parseFloat(stats["uptime"]) / 1000 / 3600).toFixed(
+								1
+							) + "h";
+						statsElement.style.display = "";
+					})
+					.catch((reason) => {
+						console.error(reason);
+					});
+			}
+			loadStats();
+		</script>
+	</body>
+</html>

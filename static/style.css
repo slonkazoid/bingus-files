@@ -1,0 +1,25 @@
+body {
+	background-color: #171717;
+	color: white;
+	font-family: sans-serif;
+}
+
+code {
+	background-color: #333333;
+	color: #60ff60;
+	font-family: "Hack", monospace;
+	padding: 2px;
+}
+
+a,
+a:visited {
+	color: lightblue;
+}
+
+fieldset {
+	padding: 10px;
+}
+
+td {
+	border: solid 1px white;
+}
