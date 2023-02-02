@@ -9,7 +9,7 @@ You can change the config file location by changing the environment variable `CO
 
 Set the environment variable `DEBUG` to enable verbose output.
 
-```json
+```js
 {
 	"host": "0.0.0.0", // Address to listen on
 	"port": 4040, // Port to listen on
