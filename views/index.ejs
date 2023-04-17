@@ -81,7 +81,6 @@
 					alert("File too big! Choose another one.");
 					return;
 				}
-
 				outLog(
 					`Uploading file: ${file.name} (${prettyFileSize(
 						file.size
@@ -95,12 +94,7 @@
 				})
 					.then((response) => {
 						if (response.status === 200) return response.text();
-						else if (response.status === 413) {
-							alert("File too big! Choose another one.");
-							throw "File too big! Choose another one.";
-						} else {
-							throw `${response.status} ${response.statusText}`;
-						}
+						else throw response;
 					})
 					.then((name) => {
 						let a = document.createElement("a");
@@ -131,12 +125,11 @@
 						max_upload = stats["max_upload"];
 						fillMaxFileSize.innerText = prettyFileSize(max_upload);
 						fillStorageUsed.innerText = prettyFileSize(
-							parseFloat(stats["storage_used"])
+							stats["storage_used"]
 						);
 						fillStoredFileCount.innerText = stats["file_count"];
 						fillUptime.innerText =
-							(parseFloat(stats["uptime"]) / 3600).toFixed(1) +
-							"h";
+							(stats["uptime"] / 3600).toFixed(1) + "h";
 						statsElement.style.display = "";
 					})
 					.catch((reason) => {

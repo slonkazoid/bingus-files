@@ -31,6 +31,14 @@ const checkDir = (dir) => {
 	}
 };
 
+function readDir() {
+	let dir = fs.readdirSync(config.upload_dir);
+	let size = 0;
+	for (let file of dir)
+		size += fs.statSync(path.join(config.upload_dir, file)).size;
+	return { size, length: dir.length, files: dir };
+}
+
 const CONFIG_FILE = process.env.CONFIG_FILE ?? "config.json";
 const config = {
 	// Defaults
@@ -84,6 +92,7 @@ if (fs.existsSync(CONFIG_FILE)) {
 debug("Initializing express app");
 
 let appStartTime = performance.now();
+let { size: currentSize, length: currentFiles } = readDir();
 
 const app = express();
 
@@ -128,13 +137,9 @@ app.get("/", (req, res) => {
 	});
 });
 app.get("/stats", (req, res) => {
-	let dir = fs.readdirSync(config.upload_dir);
-	let size = 0;
-	for (let file of dir)
-		size += fs.statSync(path.join(config.upload_dir, file)).size;
 	res.send({
-		storage_used: size,
-		file_count: dir.length,
+		storage_used: currentSize,
+		file_count: currentFiles,
 		uptime: Math.abs(new Date().getSeconds() - appListenTime), // I love floats, doubles and -0
 		max_upload: config.max_upload,
 	});
@@ -159,6 +164,8 @@ app.post(
 			)})`
 		);
 		req.files["file"].mv(path.join(config.upload_dir, filename));
+		currentSize += req.files["file"].size;
+		currentFiles++;
 		res.send(filename);
 	}
 );
@@ -173,6 +180,11 @@ app.listen(config.port, config.host, () => {
 		)}/`
 	);
 });
+
+setInterval(
+	() => ({ size: currentSize, length: currentFiles } = readDir()),
+	30000
+);
 
 debug(
 	`Initialized express app ${color.bold(

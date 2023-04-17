@@ -16,7 +16,6 @@
     "express": "^4.18.2",
     "express-fileupload": "^1.4.0"
   },
-  "devDependencies": {},
   "repository": {
     "type": "git",
     "url": "git+ssh://git@gitlab.com/hyron-devs/bingus-files.git"
