@@ -140,7 +140,7 @@ app.get("/stats", (req, res) => {
 	res.send({
 		storage_used: currentSize,
 		file_count: currentFiles,
-		uptime: Math.abs(new Date().getSeconds() - appListenTime), // I love floats, doubles and -0
+		uptime: Math.abs(Date.now() - appListenTime) / 1000,
 		max_upload: config.max_upload,
 	});
 });
@@ -173,7 +173,7 @@ app.post(
 // Seconds
 let appListenTime = 0;
 app.listen(config.port, config.host, () => {
-	appListenTime = new Date().getSeconds();
+	appListenTime = Date.now();
 	info(
 		`Listening on http://${color.bold(config.host)}:${color.bold(
 			config.port
