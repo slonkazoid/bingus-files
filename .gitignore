@@ -133,3 +133,8 @@ dist
 files/
 temp/
 config.json
+
+
+# Added by cargo
+
+/target
