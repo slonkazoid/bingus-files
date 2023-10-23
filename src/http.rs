@@ -1,84 +1,87 @@
-use crate::status::to_status_text;
-use colored::{ColoredString, Colorize};
-use log::{trace, warn};
-use std::{collections::HashMap, fmt::Debug, io::ErrorKind, net::SocketAddr};
+use crate::header::Headers;
+use crate::{
+    header::HeaderName,
+    status::{color_status_code, StatusText},
+};
+use colored::Colorize;
+use log::{debug, error, info, trace};
+use std::fmt::format;
+use std::{
+    fmt::Debug,
+    hint::unreachable_unchecked,
+    io::{Cursor, ErrorKind},
+    net::SocketAddr,
+    sync::Arc,
+    time::UNIX_EPOCH,
+};
 use thiserror::Error;
 use tokio::{
     io::{
         AsyncBufRead, AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt,
         BufReader, BufWriter,
     },
-    net::TcpStream,
+    net::{TcpListener, TcpStream, ToSocketAddrs},
+    sync::RwLock,
+    task::{self, JoinError},
+    time::Instant,
 };
 
 const MAX_HEADER_SIZE: u64 = 8192;
-
-#[derive(Debug, Clone)]
-pub enum Method {
-    GET,
-    POST,
-}
-
-impl<'a> Into<&'a str> for Method {
-    fn into(self: Self) -> &'a str {
-        match self {
-            Method::GET => "GET",
-            Method::POST => "POST",
-        }
-    }
-}
-
-impl<'a> TryFrom<&'a str> for Method {
-    type Error = String;
-
-    fn try_from(string: &'a str) -> Result<Self, Self::Error> {
-        match string {
-            "GET" => Ok(Method::GET),
-            "POST" => Ok(Method::POST),
-            _ => Err(format!("Not a valid method: {}", string)),
-        }
-    }
-}
-
-type Headers = HashMap<String, String>;
+const MAX_METHOD_LEN: usize = 16;
+const MAX_PATH_LEN: usize = 2048;
 
 #[derive(Debug)]
-pub struct Request<R: AsyncRead> {
+pub struct Request<R: AsyncRead + Unpin + Debug> {
     pub headers: Headers,
-    pub method: Method,
+    pub method: String,
     pub path: String,
+    pub params: Option<String>,
     pub body: R,
 }
 
-pub struct Response<R: AsyncRead> {
+#[derive(Debug)]
+pub struct Response<R: AsyncRead + Unpin + Debug> {
     pub headers: Headers,
     pub status_code: u32,
     pub body: R,
 }
 
-impl<'a> From<&'a str> for Response<&'a [u8]> {
-    fn from(str: &'a str) -> Self {
+pub trait AsyncReadDebugSendSync: AsyncRead + Debug + Send + Sync {}
+impl<T: AsyncRead + Debug + Send + Sync> AsyncReadDebugSendSync for T {}
+
+impl<R: AsyncRead + Unpin + Debug + Send + Sync + 'static> Response<R> {
+    pub fn into_boxed(self: Self) -> Response<Box<dyn AsyncReadDebugSendSync + Unpin>> {
+        Response {
+            headers: self.headers,
+            status_code: self.status_code,
+            body: Box::new(self.body),
+        }
+    }
+}
+
+impl From<String> for Response<Cursor<String>> {
+    fn from(string: String) -> Self {
         Response {
             headers: Headers::from([
-                ("Content-Type".to_string(), "text/plain".to_string()),
-                ("Content-Length".to_string(), str.len().to_string()),
+                (HeaderName::from("Content-Type"), "text/plain".to_string()),
+                (HeaderName::from("Content-Length"), string.len().to_string()),
             ]),
             status_code: 200,
-            body: str.as_bytes(),
+            body: Cursor::new(string),
         }
     }
 }
 
 impl<'a> From<u32> for Response<&'a [u8]> {
     fn from(code: u32) -> Self {
-        let status_text = to_status_text(code);
+        let str = code.to_status_text();
         Response {
             headers: Headers::from([
-                ("Content-Type".to_string(), "text/plain".to_string()),
-                ("Content-Length".to_string(), status_text.len().to_string()),
+                (HeaderName::from("Content-Type"), "text/plain".to_string()),
+                (HeaderName::from("Content-Length"), str.len().to_string()),
             ]),
             status_code: code,
-            body: status_text.as_bytes(),
+            body: str.as_bytes(),
         }
     }
 }
@@ -87,10 +90,16 @@ impl<'a> From<u32> for Response<&'a [u8]> {
 pub enum ParsingError {
     #[error(transparent)]
     IOError(#[from] std::io::Error),
-    // TODO: ~~Do not do this~~
-    // TODO: Refactor every instance where GenericParsingError is used
-    #[error("{0}")]
-    GenericParsingError(String),
+    #[error("Client sent an empty request")]
+    NullRequest,
+    #[error("Reached EOF while reading headers")]
+    Interrupted,
+    #[error("Invalid first line")]
+    InvalidFirstLine,
+    #[error("Path longer than {0} bytes ({1} bytes)")]
+    PathTooLong(usize, usize),
+    #[error("Invalid path: {0}")]
+    InvalidPath(String),
 }
 
 #[derive(Error, Debug)]
@@ -103,23 +112,10 @@ pub enum HTTPError {
     HandlingError,
 }
 
-fn color_status_code(status_code: u32) -> ColoredString {
-    match status_code {
-        100..=199 => status_code.to_string().white(),
-        200..=299 => status_code.to_string().bright_green(),
-        300..=399 => status_code.to_string().yellow(),
-        400..=499 => status_code.to_string().bright_red(),
-        500..=599 => status_code.to_string().red(),
-        _ => status_code.to_string().normal(),
-    }
-}
-
-async fn parse_http<R: AsyncRead + AsyncBufRead + Unpin>(
+async fn parse_http<'a, R: AsyncRead + AsyncBufRead + Unpin + Debug>(
     stream: R,
 ) -> Result<Request<R>, ParsingError> {
-    let headers: HashMap<String, String> = HashMap::with_capacity(32);
-    let method: Method;
-    let path: &str;
+    let mut headers: Headers = Headers::with_capacity(32);
 
     let mut limited_stream = stream.take(MAX_HEADER_SIZE);
     let mut lines: Vec<String> = Vec::new();
@@ -128,83 +124,103 @@ async fn parse_http<R: AsyncRead + AsyncBufRead + Unpin>(
         match limited_stream.read_line(&mut line).await {
             Ok(_) => {}
             Err(error) => {
+                debug!("{:#?}", error);
                 return match error.kind() {
-                    ErrorKind::Interrupted => Err(ParsingError::GenericParsingError(format!(
-                        "Stupid fucking client"
-                    ))),
+                    ErrorKind::Interrupted => Err(ParsingError::Interrupted),
                     _ => Err(ParsingError::IOError(error)),
-                }
+                };
             }
         };
 
+        // .read_line() writes an empty string if it reaches EOF
+        if line.is_empty() {
+            return Err(ParsingError::Interrupted);
+        }
+
+        // Trim CRLF
         line = line.trim_end_matches(&['\r', '\n']).to_string();
 
+        // Exit if we get double CRLF
         if line.is_empty() {
+            // ..unless it's the first line, then fail
+            if lines.len() == 0 {
+                return Err(ParsingError::NullRequest);
+            }
             break;
         } else {
             lines.push(line);
         }
     }
 
+    let mut lines = lines.iter();
+
     // Parse first line
-    let tokens: Vec<&str> = lines[0].split(' ').collect();
+    let tokens: Vec<&str> = lines.next().unwrap().split(' ').collect();
     let len = tokens.len();
     if len != 3 {
-        return Err(ParsingError::GenericParsingError(format!(
-            "First line has {} tokens",
-            len
-        )));
+        return Err(ParsingError::InvalidFirstLine);
     }
 
-    method = match tokens[0].try_into() {
-        Ok(method) => method,
-        Err(error) => return Err(ParsingError::GenericParsingError(error.to_string())),
+    let method = tokens[0].to_string();
+    if method.is_empty() {
+        return Err(ParsingError::InvalidFirstLine);
+    }
+
+    let mut path_param_split = tokens[1].splitn(2, '?');
+    let (path, params) = match path_param_split.next() {
+        Some(path) => (
+            path.to_string(),
+            match path_param_split.next() {
+                Some(params) => Some(params.to_string()),
+                None => None,
+            },
+        ),
+        // Trust me
+        None => unsafe { unreachable_unchecked() },
     };
-
-    path = tokens[1];
-    if path.len() > 2048 {
-        return Err(ParsingError::GenericParsingError(
-            "Path longer than 2048 characters".to_string(),
-        ));
+    if path.len() > MAX_PATH_LEN {
+        return Err(ParsingError::PathTooLong(MAX_PATH_LEN, path.len()));
     }
-    if path.is_empty() {
-        return Err(ParsingError::GenericParsingError(format!("Path is empty")));
-    }
-    if path.chars().nth(0).unwrap() != '/' {
-        return Err(ParsingError::GenericParsingError(format!(
-            "Invalid path: {}",
-            path
-        )));
+    if path.is_empty() || path.chars().nth(0).unwrap() != '/' {
+        return Err(ParsingError::InvalidPath(path.to_string()));
     }
 
+    loop {
+        match lines.next() {
+            Some(header) => {
+                if let Some((name, value)) = header
+                    .split_once(':')
+                    .map(|(name, value)| (name.trim(), value.trim()))
+                && !name.is_empty() {
+                    headers.insert(HeaderName::from(name), value.to_string());
+                } else {
+                    debug!("Ignoring invalid header: {}", header);
+                }
+            }
+            None => break
+        }
+    }
     return Ok(Request {
         headers,
         method,
-        path: path.to_string(),
+        path,
+        params,
         body: limited_stream.into_inner(),
     });
 }
 
-async fn handle_request<'a, R: AsyncRead + Debug>(
-    request: Request<R>,
-    address: SocketAddr,
-) -> Result<Response<&'a [u8]>, ()> {
-    trace!("({:#?}) Handling request: {:#?}", address, request);
-    Ok(Response::from("hello\n"))
-}
-
-async fn write_response<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
+async fn write_response<R: AsyncRead + Unpin + Debug, W: AsyncWrite + Unpin>(
     mut response: Response<R>,
     mut stream: W,
 ) -> Result<(), std::io::Error> {
     stream.write("HTTP/1.1 ".as_bytes()).await?;
     stream
-        .write(to_status_text(response.status_code).as_bytes())
+        .write(response.status_code.to_status_text().as_bytes())
         .await?;
     stream.write("\r\n".as_bytes()).await?;
 
-    for (header, value) in response.headers {
-        stream.write(header.as_bytes()).await?;
+    for (name, value) in response.headers {
+        stream.write(name.to_string().as_bytes()).await?;
         stream.write(": ".as_bytes()).await?;
         stream.write(value.as_bytes()).await?;
         stream.write("\r\n".as_bytes()).await?;
@@ -219,27 +235,87 @@ async fn write_response<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
     Ok(())
 }
 
-pub async fn handle_connection(
-    stream: TcpStream,
-    address: SocketAddr,
-) -> Result<String, HTTPError> {
-    let (read_stream, write_stream) = tokio::io::split(stream);
-    let request = parse_http(BufReader::new(read_stream)).await?;
-    let path = request.path.clone();
-    let method: &str = request.method.clone().into();
-    match handle_request(request, address).await {
-        Ok(response) => {
-            let status_code = response.status_code;
-            write_response(response, BufWriter::new(write_stream)).await?;
-            return Ok(format!(
-                "{} {} {}",
-                color_status_code(status_code).bold(),
-                method.bold(),
-                path
-            ));
+#[derive(Debug, Clone, Copy)]
+pub struct App {}
+
+impl App {
+    pub fn new() -> Self {
+        Self {}
+    }
+
+    pub async fn listen<A: ToSocketAddrs>(self: Self, address: A) -> Result<(), JoinError> {
+        let socket = TcpListener::bind(address).await.unwrap();
+
+        let local_addr = socket.local_addr().unwrap();
+
+        info!(
+            "Listening on http://{}:{}",
+            local_addr.ip().to_string().cyan().bold(),
+            local_addr.port().to_string().red().bold()
+        );
+
+        let app = Arc::new(RwLock::new(self));
+        while let Ok((stream, address)) = socket.accept().await {
+            let app = app.clone();
+            debug!("Established connection with {:#?}", address);
+            task::spawn(async move {
+                let app = app.read().await;
+                let request_start = Instant::now();
+                match app.handle_connection(stream, address).await {
+                    Ok(str) => info!("({:#?}) {} ({:#?})", address, str, request_start.elapsed()),
+                    // TODO: Actual error logging
+                    Err(error) => error!(
+                        "({:#?}) {} ({:#?})",
+                        address,
+                        error,
+                        request_start.elapsed()
+                    ),
+                };
+            })
+            .await?;
+            debug!("Connection with {:#?} ended", address);
         }
-        Err(_) => {
-            return Err(HTTPError::HandlingError);
+        Ok(())
+    }
+
+    async fn handle_request<R: AsyncRead + Unpin + Debug>(
+        self: Self,
+        request: Request<R>,
+        address: SocketAddr,
+    ) -> Result<Response<impl AsyncRead + Debug + Unpin>, ()> {
+        if let Some(params) = request.params {
+            return Ok(Response::from(format!("hello, {}\n", params)).into_boxed());
+        } else {
+            return Ok(Response::from(200).into_boxed());
+        }
+    }
+
+    async fn handle_connection(
+        self: Self,
+        stream: TcpStream,
+        address: SocketAddr,
+    ) -> Result<String, HTTPError> {
+        let (read_stream, write_stream) = tokio::io::split(stream);
+        let request = parse_http(BufReader::new(read_stream)).await?;
+        let path = request.path.clone();
+        let method = request.method.clone();
+        trace!("({:#?}) Handling request: {:#?}", address, request);
+        match self.handle_request(request, address).await {
+            Ok(response) => {
+                let status_code = response.status_code;
+
+                trace!("({:#?}) Sending response: {:#?}", address, response);
+                write_response(response, BufWriter::new(write_stream)).await?;
+                return Ok(format!(
+                    "{} {} {}",
+                    color_status_code(status_code).bold(),
+                    method.bold(),
+                    path
+                ));
+            }
+            Err(_) => {
+                return Err(HTTPError::HandlingError);
+            }
         }
     }
 }
