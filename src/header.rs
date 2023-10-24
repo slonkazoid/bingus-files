@@ -36,10 +36,10 @@ impl<'a> From<&'a str> for HeaderName {
     }
 }
 
-impl Into<String> for HeaderName {
+impl From<HeaderName> for String {
     #[inline]
-    fn into(self: Self) -> String {
-        self.0.to_string()
+    fn from(header: HeaderName) -> Self {
+        header.0.to_string()
     }
 }
 

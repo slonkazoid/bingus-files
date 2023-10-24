@@ -1,27 +1,24 @@
-use crate::header::Headers;
 use crate::{
-    header::HeaderName,
+    header::{HeaderName, Headers},
     status::{color_status_code, StatusText},
 };
 use colored::Colorize;
 use log::{debug, error, info, trace};
-use std::fmt::format;
+
+use std::future::Future;
 use std::{
     fmt::Debug,
     hint::unreachable_unchecked,
     io::{Cursor, ErrorKind},
     net::SocketAddr,
-    sync::Arc,
-    time::UNIX_EPOCH,
 };
 use thiserror::Error;
 use tokio::{
     io::{
-        AsyncBufRead, AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt,
-        BufReader, BufWriter,
+        AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader, BufWriter,
+        ReadHalf,
     },
     net::{TcpListener, TcpStream, ToSocketAddrs},
-    sync::RwLock,
     task::{self, JoinError},
     time::Instant,
 };
@@ -31,35 +28,27 @@ const MAX_METHOD_LEN: usize = 16;
 const MAX_PATH_LEN: usize = 2048;
 
 #[derive(Debug)]
-pub struct Request<R: AsyncRead + Unpin + Debug> {
+pub struct Request {
     pub headers: Headers,
     pub method: String,
     pub path: String,
     pub params: Option<String>,
-    pub body: R,
+    pub body: ReadHalf<TcpStream>,
 }
 
 #[derive(Debug)]
-pub struct Response<R: AsyncRead + Unpin + Debug> {
+pub struct Response {
     pub headers: Headers,
     pub status_code: u32,
-    pub body: R,
+    pub body: Box<ResponseBody>,
 }
 
-pub trait AsyncReadDebugSendSync: AsyncRead + Debug + Send + Sync {}
-impl<T: AsyncRead + Debug + Send + Sync> AsyncReadDebugSendSync for T {}
+pub trait ResponseBodyTrait: AsyncRead + Debug + Send + Sync + Unpin {}
+impl<T: AsyncRead + Debug + Send + Sync + Unpin> ResponseBodyTrait for T {}
 
-impl<R: AsyncRead + Unpin + Debug + Send + Sync + 'static> Response<R> {
-    pub fn into_boxed(self: Self) -> Response<Box<dyn AsyncReadDebugSendSync + Unpin>> {
-        Response {
-            headers: self.headers,
-            status_code: self.status_code,
-            body: Box::new(self.body),
-        }
-    }
-}
+pub type ResponseBody = dyn ResponseBodyTrait;
 
-impl From<String> for Response<Cursor<String>> {
+impl From<String> for Response {
     fn from(string: String) -> Self {
         Response {
             headers: Headers::from([
@@ -67,12 +56,12 @@ impl From<String> for Response<Cursor<String>> {
                 (HeaderName::from("Content-Length"), string.len().to_string()),
             ]),
             status_code: 200,
-            body: Cursor::new(string),
+            body: Box::new(Cursor::new(string)),
         }
     }
 }
 
-impl<'a> From<u32> for Response<&'a [u8]> {
+impl From<u32> for Response {
     fn from(code: u32) -> Self {
         let str = code.to_status_text();
         Response {
@@ -81,7 +70,7 @@ impl<'a> From<u32> for Response<&'a [u8]> {
                 (HeaderName::from("Content-Length"), str.len().to_string()),
             ]),
             status_code: code,
-            body: str.as_bytes(),
+            body: Box::new(str.as_bytes()),
         }
     }
 }
@@ -96,6 +85,10 @@ pub enum ParsingError {
     Interrupted,
     #[error("Invalid first line")]
     InvalidFirstLine,
+    #[error("Method longer than {0} bytes ({1} bytes)")]
+    MethodTooLong(usize, usize),
+    #[error("Invalid method: {0}")]
+    InvalidMethod(String),
     #[error("Path longer than {0} bytes ({1} bytes)")]
     PathTooLong(usize, usize),
     #[error("Invalid path: {0}")]
@@ -108,13 +101,11 @@ pub enum HTTPError {
     IOError(#[from] std::io::Error),
     #[error("Error while parsing request: {0}")]
     ParsingError(#[from] ParsingError),
-    #[error("Error while handling request")]
-    HandlingError,
+    #[error("Error while handling request: {0}")]
+    HandlingError(#[from] anyhow::Error),
 }
 
-async fn parse_http<'a, R: AsyncRead + AsyncBufRead + Unpin + Debug>(
-    stream: R,
-) -> Result<Request<R>, ParsingError> {
+async fn parse_http<'a>(stream: BufReader<ReadHalf<TcpStream>>) -> Result<Request, ParsingError> {
     let mut headers: Headers = Headers::with_capacity(32);
 
     let mut limited_stream = stream.take(MAX_HEADER_SIZE);
@@ -162,8 +153,11 @@ async fn parse_http<'a, R: AsyncRead + AsyncBufRead + Unpin + Debug>(
     }
 
     let method = tokens[0].to_string();
+    if method.len() > MAX_METHOD_LEN {
+        return Err(ParsingError::MethodTooLong(MAX_METHOD_LEN, method.len()));
+    }
     if method.is_empty() {
-        return Err(ParsingError::InvalidFirstLine);
+        return Err(ParsingError::InvalidMethod(method));
     }
 
     let mut path_param_split = tokens[1].splitn(2, '?');
@@ -205,12 +199,12 @@ async fn parse_http<'a, R: AsyncRead + AsyncBufRead + Unpin + Debug>(
         method,
         path,
         params,
-        body: limited_stream.into_inner(),
+        body: limited_stream.into_inner().into_inner(),
     });
 }
 
-async fn write_response<R: AsyncRead + Unpin + Debug, W: AsyncWrite + Unpin>(
-    mut response: Response<R>,
+async fn write_response<W: AsyncWrite + Unpin>(
+    mut response: Response,
     mut stream: W,
 ) -> Result<(), std::io::Error> {
     stream.write("HTTP/1.1 ".as_bytes()).await?;
@@ -235,12 +229,35 @@ async fn write_response<R: AsyncRead + Unpin + Debug, W: AsyncWrite + Unpin>(
     Ok(())
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct App {}
+pub struct App<S, F>
+where
+    S: Clone + Debug + Default + Send + Sync + 'static,
+    F: Future<Output = anyhow::Result<Response>> + Send,
+{
+    state: S,
+    handler: fn(Request, SocketAddr, S) -> F,
+}
 
-impl App {
-    pub fn new() -> Self {
-        Self {}
+impl<S, F> Clone for App<S, F>
+where
+    S: Clone + Debug + Default + Send + Sync + 'static,
+    F: Future<Output = anyhow::Result<Response>> + Send + 'static,
+{
+    fn clone(&self) -> Self {
+        Self {
+            state: self.state.clone(),
+            handler: self.handler.clone(),
+        }
+    }
+}
+
+impl<S, F> App<S, F>
+where
+    S: Clone + Debug + Default + Send + Sync + 'static,
+    F: Future<Output = anyhow::Result<Response>> + Send + 'static,
+{
+    pub fn new(state: S, handler: fn(Request, SocketAddr, S) -> F) -> Self {
+        Self { state, handler }
     }
 
     pub async fn listen<A: ToSocketAddrs>(self: Self, address: A) -> Result<(), JoinError> {
@@ -254,12 +271,10 @@ impl App {
             local_addr.port().to_string().red().bold()
         );
 
-        let app = Arc::new(RwLock::new(self));
         while let Ok((stream, address)) = socket.accept().await {
-            let app = app.clone();
+            let app = self.clone();
             debug!("Established connection with {:#?}", address);
             task::spawn(async move {
-                let app = app.read().await;
                 let request_start = Instant::now();
                 match app.handle_connection(stream, address).await {
                     Ok(str) => info!("({:#?}) {} ({:#?})", address, str, request_start.elapsed()),
@@ -278,16 +293,12 @@ impl App {
         Ok(())
     }
 
-    async fn handle_request<R: AsyncRead + Unpin + Debug>(
+    async fn handle_request(
         self: Self,
-        request: Request<R>,
+        request: Request,
         address: SocketAddr,
-    ) -> Result<Response<impl AsyncRead + Debug + Unpin>, ()> {
-        if let Some(params) = request.params {
-            return Ok(Response::from(format!("hello, {}\n", params)).into_boxed());
-        } else {
-            return Ok(Response::from(200).into_boxed());
-        }
+    ) -> Result<Response, anyhow::Error> {
+        self.handler.call((request, address, self.state)).await
     }
 
     async fn handle_connection(
@@ -313,8 +324,8 @@ impl App {
                     path
                 ));
             }
-            Err(_) => {
-                return Err(HTTPError::HandlingError);
+            Err(error) => {
+                return Err(HTTPError::HandlingError(error));
             }
         }
     }
