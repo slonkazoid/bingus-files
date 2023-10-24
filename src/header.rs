@@ -6,12 +6,6 @@ use std::{
 
 pub struct HeaderName(String);
 
-impl HeaderName {
-    pub fn to_string(self: Self) -> String {
-        self.into()
-    }
-}
-
 impl From<String> for HeaderName {
     fn from(string: String) -> Self {
         let string = string
@@ -47,11 +41,6 @@ impl PartialEq for HeaderName {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
         self.0 == other.0
-    }
-
-    #[inline]
-    fn ne(&self, other: &Self) -> bool {
-        !self.eq(other)
     }
 }
 

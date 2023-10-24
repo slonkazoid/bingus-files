@@ -1,22 +1,18 @@
 use crate::{
+    handler::Handler,
     header::{HeaderName, Headers},
+    request::Request,
+    response::Response,
     status::{color_status_code, StatusText},
 };
 use colored::Colorize;
 use log::{debug, error, info, trace};
-
-use std::future::Future;
-use std::{
-    fmt::Debug,
-    hint::unreachable_unchecked,
-    io::{Cursor, ErrorKind},
-    net::SocketAddr,
-};
+use std::sync::Arc;
+use std::{fmt::Debug, hint::unreachable_unchecked, io::ErrorKind, net::SocketAddr};
 use thiserror::Error;
 use tokio::{
     io::{
-        AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader, BufWriter,
-        ReadHalf,
+        AsyncBufReadExt, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader, BufWriter, ReadHalf,
     },
     net::{TcpListener, TcpStream, ToSocketAddrs},
     task::{self, JoinError},
@@ -28,51 +24,12 @@ const MAX_METHOD_LEN: usize = 16;
 const MAX_PATH_LEN: usize = 2048;
 
 #[derive(Debug)]
-pub struct Request {
+pub struct HTTPRequest {
     pub headers: Headers,
     pub method: String,
     pub path: String,
     pub params: Option<String>,
     pub body: ReadHalf<TcpStream>,
-}
-
-#[derive(Debug)]
-pub struct Response {
-    pub headers: Headers,
-    pub status_code: u32,
-    pub body: Box<ResponseBody>,
-}
-
-pub trait ResponseBodyTrait: AsyncRead + Debug + Send + Sync + Unpin {}
-impl<T: AsyncRead + Debug + Send + Sync + Unpin> ResponseBodyTrait for T {}
-
-pub type ResponseBody = dyn ResponseBodyTrait;
-
-impl From<String> for Response {
-    fn from(string: String) -> Self {
-        Response {
-            headers: Headers::from([
-                (HeaderName::from("Content-Type"), "text/plain".to_string()),
-                (HeaderName::from("Content-Length"), string.len().to_string()),
-            ]),
-            status_code: 200,
-            body: Box::new(Cursor::new(string)),
-        }
-    }
-}
-
-impl From<u32> for Response {
-    fn from(code: u32) -> Self {
-        let str = code.to_status_text();
-        Response {
-            headers: Headers::from([
-                (HeaderName::from("Content-Type"), "text/plain".to_string()),
-                (HeaderName::from("Content-Length"), str.len().to_string()),
-            ]),
-            status_code: code,
-            body: Box::new(str.as_bytes()),
-        }
-    }
 }
 
 #[derive(Error, Debug)]
@@ -95,6 +52,7 @@ pub enum ParsingError {
     InvalidPath(String),
 }
 
+#[allow(clippy::enum_variant_names)]
 #[derive(Error, Debug)]
 pub enum HTTPError {
     #[error("Error while writing to socket: {0}")]
@@ -105,7 +63,9 @@ pub enum HTTPError {
     HandlingError(#[from] anyhow::Error),
 }
 
-async fn parse_http<'a>(stream: BufReader<ReadHalf<TcpStream>>) -> Result<Request, ParsingError> {
+async fn parse_http<'a>(
+    stream: BufReader<ReadHalf<TcpStream>>,
+) -> Result<HTTPRequest, ParsingError> {
     let mut headers: Headers = Headers::with_capacity(32);
 
     let mut limited_stream = stream.take(MAX_HEADER_SIZE);
@@ -134,7 +94,7 @@ async fn parse_http<'a>(stream: BufReader<ReadHalf<TcpStream>>) -> Result<Reques
         // Exit if we get double CRLF
         if line.is_empty() {
             // ..unless it's the first line, then fail
-            if lines.len() == 0 {
+            if lines.is_empty() {
                 return Err(ParsingError::NullRequest);
             }
             break;
@@ -164,10 +124,7 @@ async fn parse_http<'a>(stream: BufReader<ReadHalf<TcpStream>>) -> Result<Reques
     let (path, params) = match path_param_split.next() {
         Some(path) => (
             path.to_string(),
-            match path_param_split.next() {
-                Some(params) => Some(params.to_string()),
-                None => None,
-            },
+            path_param_split.next().map(|params| params.to_string()),
         ),
         // Trust me
         None => unsafe { unreachable_unchecked() },
@@ -175,14 +132,12 @@ async fn parse_http<'a>(stream: BufReader<ReadHalf<TcpStream>>) -> Result<Reques
     if path.len() > MAX_PATH_LEN {
         return Err(ParsingError::PathTooLong(MAX_PATH_LEN, path.len()));
     }
-    if path.is_empty() || path.chars().nth(0).unwrap() != '/' {
+    if path.is_empty() || !path.starts_with('/') {
         return Err(ParsingError::InvalidPath(path.to_string()));
     }
 
-    loop {
-        match lines.next() {
-            Some(header) => {
-                if let Some((name, value)) = header
+    for header in lines {
+        if let Some((name, value)) = header
                     .split_once(':')
                     .map(|(name, value)| (name.trim(), value.trim()))
                 && !name.is_empty() {
@@ -190,37 +145,34 @@ async fn parse_http<'a>(stream: BufReader<ReadHalf<TcpStream>>) -> Result<Reques
                 } else {
                     debug!("Ignoring invalid header: {}", header);
                 }
-            }
-            None => break
-        }
     }
-    return Ok(Request {
+    Ok(HTTPRequest {
         headers,
         method,
         path,
         params,
         body: limited_stream.into_inner().into_inner(),
-    });
+    })
 }
 
 async fn write_response<W: AsyncWrite + Unpin>(
     mut response: Response,
     mut stream: W,
 ) -> Result<(), std::io::Error> {
-    stream.write("HTTP/1.1 ".as_bytes()).await?;
+    stream.write_all("HTTP/1.1 ".as_bytes()).await?;
     stream
-        .write(response.status_code.to_status_text().as_bytes())
+        .write_all(response.status_code.to_status_text().as_bytes())
         .await?;
-    stream.write("\r\n".as_bytes()).await?;
+    stream.write_all("\r\n".as_bytes()).await?;
 
     for (name, value) in response.headers {
-        stream.write(name.to_string().as_bytes()).await?;
-        stream.write(": ".as_bytes()).await?;
-        stream.write(value.as_bytes()).await?;
-        stream.write("\r\n".as_bytes()).await?;
+        stream.write_all(name.to_string().as_bytes()).await?;
+        stream.write_all(": ".as_bytes()).await?;
+        stream.write_all(value.as_bytes()).await?;
+        stream.write_all("\r\n".as_bytes()).await?;
     }
 
-    stream.write("\r\n".as_bytes()).await?;
+    stream.write_all("\r\n".as_bytes()).await?;
 
     tokio::io::copy(&mut response.body, &mut stream).await?;
 
@@ -229,50 +181,45 @@ async fn write_response<W: AsyncWrite + Unpin>(
     Ok(())
 }
 
-pub struct App<S, F>
+pub struct App<S>
 where
-    S: Clone + Debug + Default + Send + Sync + 'static,
-    F: Future<Output = anyhow::Result<Response>> + Send,
+    S: Clone + Debug + Send + Sync + 'static,
 {
     state: S,
-    handler: fn(Request, SocketAddr, S) -> F,
+    handler: Vec<Box<dyn Handler<S>>>,
 }
 
-impl<S, F> Clone for App<S, F>
+impl<S> App<S>
 where
-    S: Clone + Debug + Default + Send + Sync + 'static,
-    F: Future<Output = anyhow::Result<Response>> + Send + 'static,
+    S: Clone + Debug + Send + Sync + 'static,
 {
-    fn clone(&self) -> Self {
+    pub fn new(state: S) -> Self {
         Self {
-            state: self.state.clone(),
-            handler: self.handler.clone(),
+            state,
+            handler: Vec::new(),
         }
     }
-}
 
-impl<S, F> App<S, F>
-where
-    S: Clone + Debug + Default + Send + Sync + 'static,
-    F: Future<Output = anyhow::Result<Response>> + Send + 'static,
-{
-    pub fn new(state: S, handler: fn(Request, SocketAddr, S) -> F) -> Self {
-        Self { state, handler }
+    pub fn add_handler(mut self, handler: impl Handler<S>) -> Self {
+        self.handler.push(Box::new(handler));
+        self
     }
 
-    pub async fn listen<A: ToSocketAddrs>(self: Self, address: A) -> Result<(), JoinError> {
+    pub async fn listen<A: ToSocketAddrs>(self, address: A) -> Result<(), JoinError> {
         let socket = TcpListener::bind(address).await.unwrap();
 
         let local_addr = socket.local_addr().unwrap();
 
         info!(
             "Listening on http://{}:{}",
-            local_addr.ip().to_string().cyan().bold(),
-            local_addr.port().to_string().red().bold()
+            local_addr.ip().to_string().bold(),
+            local_addr.port().to_string().cyan().bold()
         );
 
+        let app = Arc::new(self);
+
         while let Ok((stream, address)) = socket.accept().await {
-            let app = self.clone();
+            let app = app.clone();
             debug!("Established connection with {:#?}", address);
             task::spawn(async move {
                 let request_start = Instant::now();
@@ -294,15 +241,24 @@ where
     }
 
     async fn handle_request(
-        self: Self,
-        request: Request,
+        &self,
+        request: HTTPRequest,
         address: SocketAddr,
-    ) -> Result<Response, anyhow::Error> {
-        self.handler.call((request, address, self.state)).await
+    ) -> anyhow::Result<Response> {
+        match self.handler.first() {
+            Some(h) => Ok(h
+                .call(Request {
+                    state: self.state.clone(),
+                    address,
+                    request,
+                })
+                .await?),
+            None => todo!(),
+        }
     }
 
     async fn handle_connection(
-        self: Self,
+        &self,
         stream: TcpStream,
         address: SocketAddr,
     ) -> Result<String, HTTPError> {
@@ -317,16 +273,14 @@ where
 
                 trace!("({:#?}) Sending response: {:#?}", address, response);
                 write_response(response, BufWriter::new(write_stream)).await?;
-                return Ok(format!(
+                Ok(format!(
                     "{} {} {}",
                     color_status_code(status_code).bold(),
                     method.bold(),
                     path
-                ));
+                ))
             }
-            Err(error) => {
-                return Err(HTTPError::HandlingError(error));
-            }
+            Err(error) => Err(HTTPError::HandlingError(error)),
         }
     }
 }

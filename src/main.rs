@@ -1,44 +1,30 @@
 #![feature(let_chains, iter_intersperse, async_closure, fn_traits)]
 
+mod handler;
 mod header;
 mod http;
+mod request;
+mod response;
 mod status;
 
-use std::{
-    net::SocketAddr,
-    sync::{Arc, Mutex},
-    time::Duration,
-};
+use http::App;
+use request::Request;
 
-use env_logger;
-use http::{App, Request, Response};
 use log::Level;
-use tokio::task;
+use std::sync::{Arc, Mutex};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Default)]
 struct State {
-    i: u64,
+    requests: u64,
 }
 
-impl Default for State {
-    fn default() -> Self {
-        Self { i: 0u64 }
-    }
-}
-
-async fn hello(
-    request: Request,
-    address: SocketAddr,
-    state: Arc<Mutex<State>>,
-) -> anyhow::Result<Response> {
-    match request.path.as_str() {
-        "/" => Ok(Response::from(format!(
-            "Hi, {:#?}, the counter is at {}\n",
-            address.ip(),
-            state.lock().unwrap().i
-        ))),
-        _ => Ok(Response::from(format!("Meow\n"))),
-    }
+async fn hello(request: Request<Arc<Mutex<State>>>) -> anyhow::Result<String> {
+    request.state.lock().unwrap().requests += 1;
+    Ok(format!(
+        "Hi, {:#?}, the counter is at {}\n",
+        request.address.ip(),
+        request.state.lock().unwrap().requests
+    ))
 }
 
 #[tokio::main]
@@ -50,16 +36,9 @@ async fn main() {
 
     let address = "0.0.0.0:4040";
 
-    let state = Arc::new(Mutex::new(State { i: 69u64 }));
+    let state = Arc::new(Mutex::new(State { requests: 0 }));
 
-    let app = App::new(state.clone(), hello);
-
-    task::spawn(async move {
-        loop {
-            tokio::time::sleep(Duration::from_secs(1)).await;
-            state.lock().unwrap().i += 1;
-        }
-    });
+    let app = App::new(state).add_handler(hello);
 
     app.listen(address).await.unwrap();
 }

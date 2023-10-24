@@ -1,11 +1,11 @@
 use colored::{ColoredString, Colorize};
 
 pub trait StatusText {
-    fn to_status_text<'a>(self: Self) -> &'a str;
+    fn to_status_text<'a>(self) -> &'a str;
 }
 
 impl StatusText for u32 {
-    fn to_status_text<'a>(self: Self) -> &'a str {
+    fn to_status_text<'a>(self) -> &'a str {
         match self {
             100 => "100 Continue",
             101 => "101 Switching Protocols",
