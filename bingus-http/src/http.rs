@@ -1,6 +1,7 @@
 use crate::{
     handler::Handler,
     header::{HeaderName, Headers},
+    method::{InvalidHeaderError, Method},
     request::Request,
     response::Response,
     status::{color_status_code, StatusText},
@@ -20,15 +21,14 @@ use tokio::{
 };
 
 const MAX_HEADER_SIZE: u64 = 8192;
-const MAX_METHOD_LEN: usize = 16;
 const MAX_PATH_LEN: usize = 2048;
 
 #[derive(Debug)]
 pub struct HTTPRequest {
     pub headers: Headers,
-    pub method: String,
+    pub method: Method,
     pub path: String,
-    pub params: Option<String>,
+    pub query: Option<String>,
     pub body: ReadHalf<TcpStream>,
 }
 
@@ -44,8 +44,8 @@ pub enum ParsingError {
     InvalidFirstLine,
     #[error("Method longer than {0} bytes ({1} bytes)")]
     MethodTooLong(usize, usize),
-    #[error("Invalid method: {0}")]
-    InvalidMethod(String),
+    #[error(transparent)]
+    InvalidMethod(#[from] InvalidHeaderError),
     #[error("Path longer than {0} bytes ({1} bytes)")]
     PathTooLong(usize, usize),
     #[error("Invalid path: {0}")]
@@ -112,19 +112,16 @@ async fn parse_http<'a>(
         return Err(ParsingError::InvalidFirstLine);
     }
 
-    let method = tokens[0].to_string();
-    if method.len() > MAX_METHOD_LEN {
-        return Err(ParsingError::MethodTooLong(MAX_METHOD_LEN, method.len()));
-    }
-    if method.is_empty() {
-        return Err(ParsingError::InvalidMethod(method));
-    }
+    let method: Method = match tokens[0].try_into() {
+        Ok(method) => method,
+        Err(error) => return Err(ParsingError::InvalidMethod(error)),
+    };
 
-    let mut path_param_split = tokens[1].splitn(2, '?');
-    let (path, params) = match path_param_split.next() {
+    let mut path_query_split = tokens[1].splitn(2, '?');
+    let (path, query) = match path_query_split.next() {
         Some(path) => (
             path.to_string(),
-            path_param_split.next().map(|params| params.to_string()),
+            path_query_split.next().map(|params| params.to_string()),
         ),
         // Trust me
         None => unsafe { unreachable_unchecked() },
@@ -150,7 +147,7 @@ async fn parse_http<'a>(
         headers,
         method,
         path,
-        params,
+        query,
         body: limited_stream.into_inner().into_inner(),
     })
 }
@@ -265,7 +262,7 @@ where
         let (read_stream, write_stream) = tokio::io::split(stream);
         let request = parse_http(BufReader::new(read_stream)).await?;
         let path = request.path.clone();
-        let method = request.method.clone();
+        let method: &str = request.method.clone().into();
         trace!("({:#?}) Handling request: {:#?}", address, request);
         match self.handle_request(request, address).await {
             Ok(response) => {

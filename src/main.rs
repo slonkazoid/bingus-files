@@ -1,16 +1,6 @@
-#![feature(let_chains, iter_intersperse, async_closure, fn_traits)]
+use bingus_http::{path, App, Request};
 
-mod handler;
-mod header;
-mod http;
-mod request;
-mod response;
-mod status;
-
-use http::App;
-use request::Request;
-
-use log::Level;
+use log::{info, Level};
 use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Default)]
@@ -39,6 +29,8 @@ async fn main() {
     let state = Arc::new(Mutex::new(State { requests: 0 }));
 
     let app = App::new(state).add_handler(hello);
+
+    info!("{:?}", path!(GET /hi/:ix));
 
     app.listen(address).await.unwrap();
 }
