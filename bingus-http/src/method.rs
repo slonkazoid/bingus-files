@@ -4,7 +4,7 @@ use thiserror::Error;
 #[error("Invalid header: {0}")]
 pub struct InvalidHeaderError(pub String);
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Method {
     GET,
     HEAD,

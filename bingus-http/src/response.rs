@@ -32,7 +32,7 @@ impl From<String> for Response {
 
 impl From<u32> for Response {
     fn from(code: u32) -> Self {
-        let string = code.to_status_text();
+        let string = format!("{}\n", code.to_status_text());
         Response {
             headers: Headers::from([
                 (HeaderName::from("Content-Type"), "text/plain".to_string()),

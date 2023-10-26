@@ -4,11 +4,13 @@ use crate::{
     method::{InvalidHeaderError, Method},
     request::Request,
     response::Response,
+    route::match_route,
     status::{color_status_code, StatusText},
+    Route,
 };
 use colored::Colorize;
 use log::{debug, error, info, trace};
-use std::sync::Arc;
+use std::{collections::BTreeMap, sync::Arc};
 use std::{fmt::Debug, hint::unreachable_unchecked, io::ErrorKind, net::SocketAddr};
 use thiserror::Error;
 use tokio::{
@@ -183,7 +185,7 @@ where
     S: Clone + Debug + Send + Sync + 'static,
 {
     state: S,
-    handler: Vec<Box<dyn Handler<S>>>,
+    routes: BTreeMap<Route, Box<dyn Handler<S>>>,
 }
 
 impl<S> App<S>
@@ -193,12 +195,12 @@ where
     pub fn new(state: S) -> Self {
         Self {
             state,
-            handler: Vec::new(),
+            routes: BTreeMap::new(),
         }
     }
 
-    pub fn add_handler(mut self, handler: impl Handler<S>) -> Self {
-        self.handler.push(Box::new(handler));
+    pub fn add_handler(mut self, route: Route, handler: impl Handler<S>) -> Self {
+        self.routes.insert(route, Box::new(handler));
         self
     }
 
@@ -242,16 +244,34 @@ where
         request: HTTPRequest,
         address: SocketAddr,
     ) -> anyhow::Result<Response> {
-        match self.handler.first() {
-            Some(h) => Ok(h
+        if let Some(highest_route) = match_route(
+            request.method.clone(),
+            request.path.clone(),
+            self.routes.keys(),
+        ) {
+            trace!(
+                "({:#?}) route matching path {:?} is {:?}",
+                address,
+                request.path,
+                highest_route,
+            );
+
+            let handler = self
+                .routes
+                .get(highest_route)
+                .unwrap_or_else(|| unsafe { unreachable_unchecked() });
+
+            return handler
                 .call(Request {
                     state: self.state.clone(),
                     address,
                     request,
                 })
-                .await?),
-            None => todo!(),
+                .await;
         }
+
+        trace!("({:#?}), no routes matches path {}", address, request.path);
+        Ok(Response::default())
     }
 
     async fn handle_connection(

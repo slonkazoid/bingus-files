@@ -11,7 +11,7 @@ pub mod response;
 pub mod route;
 pub mod status;
 
-pub use crate::bingus_http_proc_macro::path;
+pub use crate::bingus_http_proc_macro::cool_macro;
 pub use crate::http::App;
 pub use crate::method::Method;
 pub use crate::request::Request;

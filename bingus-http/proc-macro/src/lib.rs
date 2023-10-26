@@ -10,7 +10,7 @@ use proc_macro2::{Punct as Punct2, Spacing as Spacing2, TokenTree as TokenTree2}
 use quote::quote;
 
 #[proc_macro]
-pub fn path(stream: TokenStream) -> TokenStream {
+pub fn cool_macro(stream: TokenStream) -> TokenStream {
     let mut iter = stream.into_iter();
     let method_ident = match iter.next() {
         Some(t) => match t {
@@ -45,7 +45,7 @@ pub fn path(stream: TokenStream) -> TokenStream {
                             if char == '*' {
                                 wildcard_defined = true;
                                 routes_stream
-                                    .extend(quote!(bingus_http::route::RouteToken::WILDCARD));
+                                    .extend(quote!(::bingus_http::route::RouteToken::WILDCARD));
                             } else if char == ':' {
                                 let var_name = match iter.next() {
                                     Some(next) => match next {
@@ -59,19 +59,19 @@ pub fn path(stream: TokenStream) -> TokenStream {
                                 }
                                 variables_defined.push(var_name.to_string());
                                 routes_stream
-                    .extend(quote!(bingus_http::route::RouteToken::VARIABLE(#var_name.to_string())));
+                                    .extend(quote!(::bingus_http::route::RouteToken::VARIABLE(#var_name.to_string())));
                             }
                         }
                         Ident(next) => {
                             let path = next.to_string();
                             routes_stream.extend(
-                                quote!(bingus_http::route::RouteToken::PATH(#path.to_string())),
+                                quote!(::bingus_http::route::RouteToken::PATH(#path.to_string())),
                             );
                         }
                         _ => panic!("expected `*`, `:`, or an identifier, found {}", next),
                     },
                     None => routes_stream
-                        .extend(quote!(bingus_http::route::RouteToken::PATH(String::new()))),
+                        .extend(quote!(::bingus_http::route::RouteToken::PATH(String::new()))),
                 };
             }
             _ => panic!("expected `/`, found {}", token),
@@ -81,7 +81,7 @@ pub fn path(stream: TokenStream) -> TokenStream {
     }
 
     let s = quote! {
-        bingus_http::Route(bingus_http::Method::#method_ident, vec![#routes_stream])
+        ::bingus_http::Route(::bingus_http::Method::#method_ident, Box::new([#routes_stream]))
     };
     s.into()
 }
