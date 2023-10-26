@@ -17,28 +17,25 @@ pub fn match_route<'a>(
 ) -> Option<&'a Route> {
     let routes = routes.into_iter().filter(|route| route.0 == method);
     let path: Vec<&str> = path.trim_matches('/').split('/').collect();
-    let mut highest_path_matches = 0usize;
-    let mut highest_variable_matches = 0usize;
-    let mut highest_wildcard_matches = 0usize;
+    let mut highest_path_matches = 0;
+    let mut highest_variable_matches = 0;
+    let mut highest_wildcard_matches = 0;
     let mut highest_route: Option<&Route> = None;
 
     'route: for route in routes {
         let required_tokens = route
             .1
             .iter()
-            .filter(|r| match r {
-                RouteToken::WILDCARD => false,
-                _ => true,
-            })
+            .filter(|r| **r != RouteToken::WILDCARD)
             .count();
 
         if path.len() < required_tokens {
             continue;
         }
 
-        let mut path_matches = 0usize;
-        let mut variable_matches = 0usize;
-        let mut wildcard_matches = 0usize;
+        let mut path_matches = 0;
+        let mut variable_matches = 0;
+        let mut wildcard_matches = 0;
 
         for (index, token) in route.1.iter().enumerate() {
             match token {
