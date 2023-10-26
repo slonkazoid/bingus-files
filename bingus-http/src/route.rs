@@ -1,7 +1,5 @@
 use crate::method::Method;
 
-use crate as bingus_http;
-
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum RouteToken {
     PATH(String),

@@ -20,7 +20,6 @@ async fn hello(request: Request<Arc<Mutex<State>>>) -> anyhow::Result<String> {
     ))
 }
 
-#[allow(dead_code)]
 async fn increment(request: Request<Arc<Mutex<State>>>) -> anyhow::Result<String> {
     let mut lock = match request.state.lock() {
         Ok(v) => v,
@@ -30,8 +29,7 @@ async fn increment(request: Request<Arc<Mutex<State>>>) -> anyhow::Result<String
     Ok(format!("Incremented the counter!\n"))
 }
 
-#[allow(dead_code)]
-async fn trole(request: Request<Arc<Mutex<State>>>) -> anyhow::Result<Response> {
+async fn log_request(request: Request<Arc<Mutex<State>>>) -> anyhow::Result<Response> {
     info!("{:#?}", request);
     Ok(Response::default())
 }
@@ -49,15 +47,8 @@ async fn main() {
 
     let app = App::new(state)
         .add_handler(cool_macro!(GET /), hello)
-        .add_handler(cool_macro!(GET / hello), hello)
-        .add_handler(cool_macro!(GET /hello/:var), hello)
-        .add_handler(cool_macro!(GET /:var1/:var2), hello)
-        .add_handler(cool_macro!(GET /:var/hi), hello)
-        .add_handler(cool_macro!(GET / hello / hi), hello)
-        .add_handler(cool_macro!(GET /hello/ *), hello)
-        .add_handler(cool_macro!(GET /:var), hello)
-        .add_handler(cool_macro!(GET /:var/ *), hello)
-        .add_handler(cool_macro!(GET / *), hello);
+        .add_handler(cool_macro!(POST / increment), increment)
+        .add_handler(cool_macro!(GET / debug), log_request);
 
     app.listen(address).await.unwrap();
 }
