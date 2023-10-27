@@ -1,8 +1,8 @@
-use bingus_http::{cool_macro, App, Request};
+use bingus_http::{cool_macro, App, Request, Response};
 use log::LevelFilter;
 
-async fn log_request(_request: Request<()>) -> anyhow::Result<u32> {
-    Ok(418)
+async fn log_request(_request: Request<()>) -> anyhow::Result<Response> {
+    Ok(Response::from_code(418))
 }
 
 #[tokio::main]
