@@ -21,13 +21,16 @@ pub fn match_route<'a>(
     path: Vec<&str>,
     routes: impl Iterator<Item = &'a Route>,
 ) -> Option<(&'a Route, usize, usize, usize)> {
-    let routes = routes.into_iter().filter(|route| route.0 == method);
     let mut highest_path_matches = 0;
     let mut highest_parameter_matches = 0;
     let mut highest_wildcard_matches = 0;
     let mut highest_route: Option<&Route> = None;
 
     'route: for route in routes {
+        if route.0 != method {
+            continue;
+        }
+
         let required_tokens = route
             .1
             .iter()
