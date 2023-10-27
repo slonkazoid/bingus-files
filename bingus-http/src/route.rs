@@ -2,23 +2,28 @@ use crate::method::Method;
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum RouteToken {
-    PATH(String),
-    VARIABLE(String),
+    PATH(Box<str>),
+    PARAMETER(Box<str>),
     WILDCARD,
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Route(pub Method, pub Box<[RouteToken]>);
 
+impl Route {
+    pub fn new(method: Method, tokens: Box<[RouteToken]>) -> Self {
+        Self(method, tokens)
+    }
+}
+
 pub fn match_route<'a>(
     method: Method,
-    path: String,
+    path: Vec<&str>,
     routes: impl Iterator<Item = &'a Route>,
-) -> Option<&'a Route> {
+) -> Option<(&'a Route, usize, usize, usize)> {
     let routes = routes.into_iter().filter(|route| route.0 == method);
-    let path: Vec<&str> = path.trim_matches('/').split('/').collect();
     let mut highest_path_matches = 0;
-    let mut highest_variable_matches = 0;
+    let mut highest_parameter_matches = 0;
     let mut highest_wildcard_matches = 0;
     let mut highest_route: Option<&Route> = None;
 
@@ -34,20 +39,20 @@ pub fn match_route<'a>(
         }
 
         let mut path_matches = 0;
-        let mut variable_matches = 0;
+        let mut parameter_matches = 0;
         let mut wildcard_matches = 0;
 
         for (index, token) in route.1.iter().enumerate() {
             match token {
                 RouteToken::PATH(path_token) => {
-                    if path_token == path[index] {
+                    if (**path_token) == *path[index] {
                         path_matches += 1;
                     } else {
                         continue 'route;
                     }
                 }
-                RouteToken::VARIABLE(_) => {
-                    variable_matches += 1;
+                RouteToken::PARAMETER(_) => {
+                    parameter_matches += 1;
                 }
                 RouteToken::WILDCARD => {
                     wildcard_matches += path.len() + 1 - index;
@@ -55,29 +60,38 @@ pub fn match_route<'a>(
             }
         }
 
-        if (path.len() > path_matches + variable_matches && wildcard_matches == 0)
-            || (path_matches == 0 && variable_matches == 0 && wildcard_matches == 0)
+        if (path.len() > path_matches + parameter_matches && wildcard_matches == 0)
+            || (path_matches == 0 && parameter_matches == 0 && wildcard_matches == 0)
         {
             continue;
         } else if path_matches > highest_path_matches
-            || (path_matches == highest_path_matches && variable_matches > highest_variable_matches)
             || (path_matches == highest_path_matches
-                && variable_matches == highest_variable_matches
+                && parameter_matches > highest_parameter_matches)
+            || (path_matches == highest_path_matches
+                && parameter_matches == highest_parameter_matches
                 && wildcard_matches < highest_wildcard_matches)
             || (path_matches == 0
                 && highest_path_matches == 0
-                && variable_matches == 0
-                && highest_variable_matches == 0
+                && parameter_matches == 0
+                && highest_parameter_matches == 0
                 && wildcard_matches > highest_wildcard_matches)
         {
             highest_path_matches = path_matches;
-            highest_variable_matches = variable_matches;
+            highest_parameter_matches = parameter_matches;
             highest_wildcard_matches = wildcard_matches;
             highest_route = Some(route);
         }
     }
 
-    highest_route
+    match highest_route {
+        Some(route) => Some((
+            route,
+            highest_path_matches,
+            highest_parameter_matches,
+            highest_wildcard_matches,
+        )),
+        None => None,
+    }
 }
 
 #[cfg(test)]
@@ -87,58 +101,68 @@ mod tests {
         Method, Route,
     };
 
-    macro_rules! r {
-        [$($x:expr),*] => {
-            Route(Method::GET, Box::new([$($x),*]))
-        };
+    macro_rules! route_macro {
+    ($method:ident $($type:ident $($value:literal)?)/+) => {
+        Route(
+            Method::$method,
+            Box::new([$(
+                RouteToken::$type$((String::from($value).into_boxed_str()))?
+            ),*])
+        )
+    };
+}
+
+    macro_rules! get {
+    [$($type:ident $($value:literal)?)/+] => {
+        route_macro!(GET $($type $($value)?)/+)
     }
+}
 
     macro_rules! m {
         ($p:literal, $r:expr) => {
-            match_route(Method::GET, $p.to_string(), $r.iter())
+            match match_route(
+                Method::GET,
+                $p.trim_matches('/').split('/').collect::<Vec<&str>>(),
+                $r.iter(),
+            ) {
+                Some(some) => Some(some.0),
+                None => None,
+            }
         };
     }
 
     #[test]
     fn sanity_check() {
-        let get_slash = r![RouteToken::PATH("".to_string())];
+        let get_slash = get![PATH ""];
         assert!(m!("/", [get_slash]).is_some());
     }
 
     #[test]
     fn route_matching() {
         let routes = [
-            r![RouteToken::PATH("".to_string())],        // 0: GET /
-            r![RouteToken::PATH("hello".to_string())],   // 1: GET /hello
-            r![RouteToken::PATH("hi".to_string())],      // 2: GET /hi
-            r![RouteToken::VARIABLE("var".to_string())], // 3: GET /:var
-            r![
-                RouteToken::PATH("hello".to_string()),
-                RouteToken::PATH("hi".to_string())
+            get![PATH ""],      // 0: GET /
+            get![PATH "hello"], // 1: GET /hello
+            get![PATH "hi"],    // 2: GET /hi
+            get![PATH "var"],   // 3: GET /:var
+            get![
+                PATH "hello" / PATH "hi"
             ], // 4: GET /hello/hi
-            r![
-                RouteToken::PATH("hello".to_string()),
-                RouteToken::VARIABLE("var".to_string())
+            get![
+                PATH "hello" / PARAMETER "var"
             ], // 5: GET /hello/:var
-            r![
-                RouteToken::VARIABLE("var".to_string()),
-                RouteToken::PATH("hi".to_string())
+            get![
+                PARAMETER "var" / PATH "hi"
             ], // 6: GET /:var/hi
-            r![
-                RouteToken::VARIABLE("var1".to_string()),
-                RouteToken::VARIABLE("var2".to_string())
+            get![
+                PARAMETER "var1" / PARAMETER "var2"
             ], // 7: GET /:var1/:var2
-            r![
-                RouteToken::PATH("hello".to_string()),
-                RouteToken::PATH("hi".to_string()),
-                RouteToken::WILDCARD
+            get![
+                PATH "hello"/ PATH "hi" / WILDCARD
             ], // 8: GET /hello/hi/*
-            r![
-                RouteToken::PATH("hello".to_string()),
-                RouteToken::VARIABLE("var".to_string()),
-                RouteToken::WILDCARD
+            get![
+                PATH "hello"/ PARAMETER "var" / WILDCARD
             ], // 9: GET /hello/:var/*
-            r![RouteToken::WILDCARD],                    // 10: GET /*
+            get![WILDCARD],     // 10: GET /*
         ];
 
         assert_eq!(m!("/", routes), Some(&routes[0]));

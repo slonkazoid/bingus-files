@@ -1,4 +1,4 @@
-#![feature(let_chains, iter_intersperse, async_closure, fn_traits)]
+#![feature(let_chains, iter_intersperse, async_closure, fn_traits, macro_metavar_expr)]
 
 extern crate bingus_http_proc_macro;
 

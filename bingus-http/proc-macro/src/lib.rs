@@ -59,19 +59,20 @@ pub fn cool_macro(stream: TokenStream) -> TokenStream {
                                 }
                                 variables_defined.push(var_name.to_string());
                                 routes_stream
-                                    .extend(quote!(::bingus_http::route::RouteToken::VARIABLE(#var_name.to_string())));
+                                    .extend(quote!(::bingus_http::route::RouteToken::PARAMETER(String::from(#var_name).into_boxed_str())));
                             }
                         }
                         Ident(next) => {
                             let path = next.to_string();
                             routes_stream.extend(
-                                quote!(::bingus_http::route::RouteToken::PATH(#path.to_string())),
+                                quote!(::bingus_http::route::RouteToken::PATH(String::from(#path).into_boxed_str())),
                             );
                         }
                         _ => panic!("expected `*`, `:`, or an identifier, found {}", next),
                     },
-                    None => routes_stream
-                        .extend(quote!(::bingus_http::route::RouteToken::PATH(String::new()))),
+                    None => routes_stream.extend(quote!(::bingus_http::route::RouteToken::PATH(
+                        String::new().into_boxed_str()
+                    ))),
                 };
             }
             _ => panic!("expected `/`, found {}", token),

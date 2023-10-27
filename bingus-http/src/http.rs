@@ -2,9 +2,9 @@ use crate::{
     handler::Handler,
     header::{HeaderName, Headers},
     method::{InvalidHeaderError, Method},
-    request::Request,
+    request::{Params, Request},
     response::Response,
-    route::match_route,
+    route::{match_route, RouteToken},
     status::{color_status_code, StatusText},
     Route,
 };
@@ -244,21 +244,33 @@ where
         request: HTTPRequest,
         address: SocketAddr,
     ) -> anyhow::Result<Response> {
-        if let Some(highest_route) = match_route(
-            request.method.clone(),
-            request.path.clone(),
-            self.routes.keys(),
-        ) {
+        let path: Vec<&str> = request.path.trim_matches('/').split('/').collect();
+        if let Some((matched_route, _, matched_params, _)) =
+            match_route(request.method.clone(), path.clone(), self.routes.keys())
+        {
             trace!(
                 "({:#?}) route matching path {:?} is {:?}",
                 address,
                 request.path,
-                highest_route,
+                matched_route,
             );
+
+            let mut params = Params::with_capacity(matched_params);
+
+            if matched_params > 0 {
+                for (index, token) in matched_route.1.iter().enumerate() {
+                    match token {
+                        RouteToken::PARAMETER(param) => {
+                            params.insert(param.to_string(), path[index].to_string());
+                        }
+                        _ => {}
+                    }
+                }
+            }
 
             let handler = self
                 .routes
-                .get(highest_route)
+                .get(matched_route)
                 .unwrap_or_else(|| unsafe { unreachable_unchecked() });
 
             return handler
@@ -266,6 +278,7 @@ where
                     state: self.state.clone(),
                     address,
                     request,
+                    params,
                 })
                 .await;
         }

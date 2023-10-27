@@ -1,5 +1,7 @@
 use thiserror::Error;
 
+// TODO: proc_macro away all the boilerplate
+
 #[derive(Debug, Error)]
 #[error("Invalid header: {0}")]
 pub struct InvalidHeaderError(pub String);
