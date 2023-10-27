@@ -1,28 +1,20 @@
 use bingus_http::{cool_macro, App, Request};
+use log::LevelFilter;
 
-use log::{info, Level};
-
-async fn log_request(request: Request<()>) -> anyhow::Result<u32> {
-    info!("{:#?}", request.params);
-    Ok(200)
+async fn log_request(_request: Request<()>) -> anyhow::Result<u32> {
+    Ok(418)
 }
 
 #[tokio::main]
 async fn main() {
     env_logger::builder()
-        .filter_level(Level::Info.to_level_filter())
+        .filter_level(LevelFilter::Info)
         .parse_default_env()
         .init();
 
     let address = "0.0.0.0:4040";
 
-    let state = ();
-
-    let app = App::new(state)
-        .add_handler(cool_macro!(GET / debug), log_request)
-        .add_handler(cool_macro!(GET / debug / :var), log_request)
-        .add_handler(cool_macro!(GET / debug / :var1 / :var2), log_request)
-        .add_handler(cool_macro!(GET / debug / :var1 / hi / :var2), log_request);
+    let app = App::new(()).add_handler(cool_macro!(GET /), log_request);
 
     app.listen(address).await.unwrap();
 }
