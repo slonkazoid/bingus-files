@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>bingus-files</title>
+		<link rel="stylesheet" href="style.css" />
+		<script src="main.js" defer></script>
+	</head>
+	<body>
+		<main>
+			<h1>bingus-files 2</h1>
+			<p>
+				also check out
+				<a href="https://files.colon3.lol/">floppa-files</a>!
+			</p>
+			<hr />
+			<p><b>Max upload size: INFINITE</b></p>
+			<p>
+				You can also use <code>curl</code> to upload files:
+				<code id="curl-command"></code>
+			</p>
+			<script>
+				document.getElementById(
+					"curl-command"
+				).innerText = `curl -T file ${location.origin}`;
+			</script>
+
+			<form action="#">
+				<input type="file" id="file" name="file" />
+			</form>
+
+			<div id="output"></div>
+		</main>
+	</body>
+</html>

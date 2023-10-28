@@ -1,0 +1,92 @@
+@import url("catppuccin.css");
+
+:root {
+	font-family: monospace;
+
+	background-color: var(--ctp-latte-base);
+	color: var(--ctp-latte-text);
+}
+
+main {
+	margin: auto;
+	padding: 1em;
+	display: block;
+	border: 2px solid;
+	width: 50%;
+
+	border-color: --var(-ctp-latte-crust);
+}
+
+code {
+	padding: 0.3em 0.5em;
+
+	background-color: var(--ctp-latte-surface0);
+	color: var(--ctp-latte-subtext1);
+}
+
+#output {
+	margin-top: 1em;
+	padding: 1em;
+	display: block;
+
+	background-color: var(--ctp-latte-surface0);
+	color: var(--ctp-latte-subtext0);
+}
+
+a {
+	color: var(--ctp-latte-pink);
+}
+
+a:hover {
+	color: var(--ctp-latte-rosewater);
+}
+
+a:active {
+	color: var(--ctp-latte-blue);
+}
+
+a:visited {
+	color: var(--ctp-latte-mauve);
+}
+
+#file {
+	font-size: larger;
+	padding: 1em;
+}
+
+@media (prefers-color-scheme: dark) {
+	:root {
+		background-color: var(--ctp-mocha-base);
+		color: var(--ctp-mocha-text);
+	}
+
+	code {
+		background-color: var(--ctp-mocha-surface0);
+		color: var(--ctp-mocha-subtext1);
+	}
+
+	#output {
+		background-color: var(--ctp-mocha-surface0);
+		color: var(--ctp-mocha-subtext0);
+	}
+
+	a {
+		color: var(--ctp-mocha-pink);
+	}
+
+	a:hover {
+		color: var(--ctp-mocha-rosewater);
+	}
+
+	a:active {
+		color: var(--ctp-mocha-blue);
+	}
+
+	a:visited {
+		color: var(--ctp-mocha-mauve);
+	}
+
+	#file {
+		border-color: --var(-ctp-mocha-crust);
+	}
+}
