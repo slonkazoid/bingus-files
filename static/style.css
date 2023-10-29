@@ -19,11 +19,10 @@ code {
 }
 
 #output {
-	margin-top: 1em;
 	padding: 1em;
 	display: block;
 
-	background-color: var(--ctp-latte-surface0);
+	/*background-color: var(--ctp-latte-surface0);*/
 	color: var(--ctp-latte-subtext0);
 }
 
@@ -63,8 +62,8 @@ a:visited {
 		color: var(--ctp-mocha-subtext1);
 	}
 
-	#output {
-		background-color: var(--ctp-mocha-surface0);
+	output {
+		/*background-color: var(--ctp-mocha-surface0);*/
 		color: var(--ctp-mocha-subtext0);
 	}
 
@@ -95,6 +94,6 @@ a:visited {
 		padding: 1em;
 		display: block;
 		border: 2px solid;
-		width: 50%;
+		width: 60%;
 	}
 }
