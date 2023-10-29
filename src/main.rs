@@ -184,7 +184,7 @@ async fn upload(mut request: Request<Arc<Config>>) -> Result<Response> {
 
     if try_exists(Path::new(&request.state.upload_dir).join(&target_name)).await? {
         // We got extremely unlucky (62^8)
-        return Ok(Response::from_code(503));
+        return Ok(Response::from_code(500));
     }
 
     if let Some(size) = request

@@ -89,7 +89,7 @@ dependencies = [
 [[package]]
 name = "bingus-http"
 version = "0.1.0"
-source = "git+https://gitlab.com/hyron-devs/bingus-http#d2d601738804eaddf59b6c0c89f81d16097c9b42"
+source = "git+https://gitlab.com/hyron-devs/bingus-http#31660dee0aea23621bebb21e63f12a999071ece0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -103,7 +103,7 @@ dependencies = [
 [[package]]
 name = "bingus-http-proc-macro"
 version = "0.1.0"
-source = "git+https://gitlab.com/hyron-devs/bingus-http#d2d601738804eaddf59b6c0c89f81d16097c9b42"
+source = "git+https://gitlab.com/hyron-devs/bingus-http#31660dee0aea23621bebb21e63f12a999071ece0"
 dependencies = [
  "proc-macro2",
  "quote",
