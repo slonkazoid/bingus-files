@@ -8,7 +8,7 @@
 }
 
 main {
-	border-color: --var(-ctp-latte-crust);
+	border-color: var(--ctp-latte-crust);
 }
 
 code {
@@ -19,10 +19,9 @@ code {
 }
 
 #output {
-	padding: 1em;
+	padding: 0.5em 1em;
 	display: block;
 
-	/*background-color: var(--ctp-latte-surface0);*/
 	color: var(--ctp-latte-subtext0);
 }
 
@@ -45,6 +44,29 @@ a:visited {
 #file {
 	font-size: larger;
 	padding: 1em;
+	border: none;
+	display: block;
+	text-align: center;
+
+	background-color: var(--ctp-latte-surface1);
+}
+
+progress {
+	width: 100%;
+	border: none;
+
+	color: var(--ctp-latte-surface2);
+}
+
+::-moz-progress-bar,
+::-webkit-progress-bar {
+	background-color: var(--ctp-latte-pink);
+}
+
+#maxUploadSize,
+#filesStored,
+#storageUsed {
+	font-weight: bold;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -62,8 +84,7 @@ a:visited {
 		color: var(--ctp-mocha-subtext1);
 	}
 
-	output {
-		/*background-color: var(--ctp-mocha-surface0);*/
+	#output {
 		color: var(--ctp-mocha-subtext0);
 	}
 
@@ -84,16 +105,25 @@ a:visited {
 	}
 
 	#file {
-		border-color: --var(-ctp-mocha-crust);
+		background-color: var(--ctp-mocha-surface1);
+	}
+
+	progress {
+		color: var(--ctp-mocha-surface2);
+	}
+
+	::-moz-progress-bar,
+	::-webkit-progress-bar {
+		background-color: var(--ctp-mocha-pink);
 	}
 }
 
-@media (min-width: 768px) {
+@media (min-width: 992px) {
 	main {
 		margin: auto;
 		padding: 1em;
 		display: block;
 		border: 2px solid;
-		width: 60%;
+		width: 75%;
 	}
 }

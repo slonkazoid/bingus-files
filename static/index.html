@@ -5,7 +5,7 @@
 		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 		<title>bingus-files</title>
 		<link rel="stylesheet" href="style.css" />
-		<script src="main.js" defer></script>
+		<script src="main.js" type="module" defer></script>
 	</head>
 	<body>
 		<main>
@@ -24,8 +24,42 @@
 				also check out
 				<a href="https://files.colon3.lol/">floppa-files</a>!
 			</p>
+
+			<details>
+				<summary><b>Terms of Service</b></summary>
+				<ul>
+					<li>don't upload illegal or harmful content</li>
+					<li>don't attack the server</li>
+				</ul>
+				<p>
+					if you have any complaints or takedown requests, contact me
+					on one of these platforms:
+					<br />
+					matrix: @alifurkan:matrix.org
+					<br />
+					email: alifurkanyildiz [AT] gmail dot com
+					<br />
+					gpg key: 30DDF657DC25EF06FDDCD9B229DFCF2217C06A0A (on
+					keys.openpgp.org)
+				</p>
+			</details>
+
 			<hr />
-			<p><b>Max upload size: INFINITE</b></p>
+
+			<table>
+				<tr>
+					<td>Max upload size:</td>
+					<td><span id="maxUploadSize"></span></td>
+				</tr>
+				<tr>
+					<td>Files stored:</td>
+					<td><span id="filesStored"></span></td>
+				</tr>
+				<tr>
+					<td>Storage used:</td>
+					<td><span id="storageUsed"></span></td>
+				</tr>
+			</table>
 			<p>
 				You can also use <code>curl</code> to upload files:
 				<code id="curl-command"></code>
@@ -37,10 +71,22 @@
 			</script>
 
 			<form action="#">
-				<input type="file" id="file" name="file" />
+				<input type="file" id="file" name="file" multiple />
+				<label for="file">
+					<p>
+						choose files to upload
+						<br />
+						<b
+							>by uploading a file, you agree to the terms of
+							service</b
+						>
+					</p>
+				</label>
 			</form>
 
-			<div id="output"></div>
+			<div id="output">
+				<p>uploaded files will show up here</p>
+			</div>
 		</main>
 	</body>
 </html>

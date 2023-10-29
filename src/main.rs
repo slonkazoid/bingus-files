@@ -5,7 +5,7 @@ mod serve_static;
 
 use crate::serve_static::{serve_static, serve_static_param};
 
-use std::{path::Path, sync::Arc};
+use std::{fs::read_dir, path::Path, sync::Arc, time::Duration};
 
 use crate::config::Config;
 use anyhow::Result;
@@ -13,10 +13,50 @@ use bingus_http::{cool_macro, header::HeaderName, App, Request, Response};
 use colored::Colorize;
 use log::{debug, info, trace, LevelFilter};
 use rand::Rng;
+use serde::Serialize;
 use tokio::{
     fs::{try_exists, OpenOptions},
     io::{AsyncReadExt, AsyncWriteExt},
+    sync::RwLock,
+    task,
+    time::sleep,
 };
+
+#[derive(Debug, Clone, Serialize)]
+struct Stats {
+    pub max_file_size: u64,
+    pub files_stored: u64,
+    pub storage_used: u64,
+}
+
+#[derive(Debug)]
+struct State {
+    pub config: Config,
+    pub stats: Stats,
+}
+
+fn refresh_stats(config: &Config) -> Result<Stats> {
+    let files_dir = read_dir(&config.upload_dir)?;
+
+    let mut files_stored = 0;
+    let mut storage_used = 0;
+
+    for file in files_dir {
+        let file = file?;
+        let metadata = file.metadata()?;
+
+        if metadata.is_file() {
+            files_stored += 1;
+            storage_used += metadata.len();
+        }
+    }
+
+    Ok(Stats {
+        max_file_size: config.max_file_size,
+        files_stored,
+        storage_used,
+    })
+}
 
 fn sanitize_file_name(name: &str) -> String {
     name.replace(
@@ -26,17 +66,19 @@ fn sanitize_file_name(name: &str) -> String {
     .to_string()
 }
 
-async fn upload(mut request: Request<Arc<Config>>) -> Result<Response> {
+async fn upload(mut request: Request<Arc<RwLock<State>>>) -> Result<Response> {
+    let config = request.state.read().await.config.clone();
+
     let file_name = request.params.get("file").expect("What");
     let random_prefix: String = rand::thread_rng()
         .sample_iter(rand::distributions::Alphanumeric)
-        .take(request.state.prefix_length as usize)
+        .take(config.prefix_length as usize)
         .map(char::from)
         .collect();
     let target_name = format!("{}.{}", random_prefix, sanitize_file_name(file_name));
 
-    if try_exists(Path::new(&request.state.upload_dir).join(&target_name)).await? {
-        // We got extremely unlucky (62^8)
+    if try_exists(Path::new(&config.upload_dir).join(&target_name)).await? {
+        // We got extremely unlucky (62^8 by default)
         return Ok(Response::from_code(500));
     }
 
@@ -44,7 +86,7 @@ async fn upload(mut request: Request<Arc<Config>>) -> Result<Response> {
         .request
         .headers
         .get(&HeaderName::from("Content-Length"))
-        .and_then(|s| s.parse::<usize>().ok())
+        .and_then(|s| s.parse::<u64>().ok())
     {
         info!(
             "({:#?}) Uploading {} as {} ({})",
@@ -54,13 +96,16 @@ async fn upload(mut request: Request<Arc<Config>>) -> Result<Response> {
             humansize::format_size(size, humansize::DECIMAL)
         );
 
+        if size > config.max_file_size {
+            return Ok(Response::from_code(400));
+        }
         if size > 0 {
             let mut buf = [0u8; 8192];
             let mut total = 0;
             let mut file = OpenOptions::new()
                 .write(true)
                 .create(true)
-                .open(Path::new(&request.state.upload_dir).join(&target_name))
+                .open(Path::new(&config.upload_dir).join(&target_name))
                 .await?;
             loop {
                 let read = request.request.body.read(&mut buf).await?;
@@ -70,21 +115,29 @@ async fn upload(mut request: Request<Arc<Config>>) -> Result<Response> {
                 let _written = file.write(&buf[..read]).await?;
                 total += read;
                 trace!("read/wrote {} bytes, {} total", read, total);
-                if total >= size {
+                if total as u64 >= size {
                     break;
                 }
             }
 
             file.flush().await?;
+
+            request.state.write().await.stats.storage_used += size as u64;
         } else {
-            tokio::fs::File::create(Path::new(&request.state.upload_dir).join(&target_name))
-                .await?;
+            tokio::fs::File::create(Path::new(&config.upload_dir).join(&target_name)).await?;
         }
+
+        request.state.write().await.stats.files_stored += 1;
 
         Ok(Response::from(target_name))
     } else {
         Ok(Response::from_code(400))
     }
+}
+
+async fn get_stats(request: Request<Arc<RwLock<State>>>) -> Result<String> {
+    let json = serde_json::to_string(&request.state.read().await.stats.clone())?;
+    Ok(json)
 }
 
 #[tokio::main]
@@ -114,13 +167,30 @@ async fn main() {
         tokio::fs::create_dir(&config.temp_dir).await.unwrap();
     }
 
-    let app = App::new(Arc::new(config.clone()))
+    let files_dir = config.upload_dir.clone().leak();
+    let stats = refresh_stats(&config).unwrap();
+
+    let state = Arc::new(RwLock::new(State { config, stats }));
+
+    let app = App::new(state.clone())
         .add_handler(cool_macro!(PUT / :file), upload)
+        .add_handler(cool_macro!(GET / stats), get_stats)
         .add_handler(cool_macro!(GET / *), serve_static("static"))
         .add_handler(
             cool_macro!(GET / file / :file),
-            serve_static_param(config.upload_dir.leak(), "file"),
+            serve_static_param(files_dir, "file"),
         );
+
+    let state = state.clone();
+    task::spawn(async move {
+        let config = &state.read().await.config.clone();
+        loop {
+            sleep(Duration::from_secs(config.stats_interval)).await;
+            debug!("Refreshing stats");
+            let stats = refresh_stats(config).unwrap();
+            state.write().await.stats = stats;
+        }
+    });
 
     app.listen(address).await.unwrap();
 }

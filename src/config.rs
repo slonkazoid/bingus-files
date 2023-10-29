@@ -15,6 +15,8 @@ pub struct Config {
     pub upload_dir: String,
     pub temp_dir: String,
     pub prefix_length: u8,
+    pub max_file_size: u64,
+    pub stats_interval: u64,
 }
 
 impl Default for Config {
@@ -25,6 +27,8 @@ impl Default for Config {
             upload_dir: "files".to_string(),
             temp_dir: "temp".to_string(),
             prefix_length: 8,
+            max_file_size: 1_000_000_000,
+            stats_interval: 15,
         }
     }
 }
@@ -36,6 +40,5 @@ pub async fn load() -> Result<Config> {
     let mut file = OpenOptions::new().read(true).open(&config_file).await?;
     let mut buf = String::with_capacity(metadata.len() as usize);
     file.read_to_string(&mut buf).await?;
-    let config: Config = toml::from_str(buf.as_str())?; // this crate is torture
-    Ok(config)
+    Ok(toml::from_str(buf.as_str())?)
 }
