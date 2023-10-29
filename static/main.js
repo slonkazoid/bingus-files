@@ -9,9 +9,9 @@ const prettyFileSize = (n) => {
 
 const prettyMs = (n) => {
 	let f = [];
-	if (n > 3600000) f.push(Math.floor((n % 3600000) / 3600000) + "h");
-	if (n > 60000) f.push(Math.floor((n % 60000) / 60000) + "m");
-	if (n > 1000) f.push(Math.floor((n % 1000) / 1000) + "s");
+	if (n >= 3600000) f.push(Math.floor(n / 3600000) + "h");
+	if ((n % 3600000) >= 60000) f.push(Math.floor((n % 3600000) / 60000) + "m");
+	if ((n % 60000) >= 1000) f.push(Math.floor((n % 60000) / 1000) + "s");
 	if (n % 1000) f.push(Math.floor(n % 1000) + "ms");
 	return f.join(" ");
 };
