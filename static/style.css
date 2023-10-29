@@ -8,12 +8,6 @@
 }
 
 main {
-	margin: auto;
-	padding: 1em;
-	display: block;
-	border: 2px solid;
-	width: 50%;
-
 	border-color: --var(-ctp-latte-crust);
 }
 
@@ -60,6 +54,10 @@ a:visited {
 		color: var(--ctp-mocha-text);
 	}
 
+	main {
+		border-color: --var(-ctp-mocha-crust);
+	}
+
 	code {
 		background-color: var(--ctp-mocha-surface0);
 		color: var(--ctp-mocha-subtext1);
@@ -88,5 +86,15 @@ a:visited {
 
 	#file {
 		border-color: --var(-ctp-mocha-crust);
+	}
+}
+
+@media (min-width: 768px) {
+	main {
+		margin: auto;
+		padding: 1em;
+		display: block;
+		border: 2px solid;
+		width: 50%;
 	}
 }
