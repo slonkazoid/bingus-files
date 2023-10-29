@@ -3,8 +3,7 @@
 mod config;
 mod serve_static;
 
-use crate::serve_static::serve_static;
-use crate::serve_static::serve_static_param;
+use crate::serve_static::{serve_static, serve_static_param};
 
 use std::{path::Path, sync::Arc};
 
@@ -55,27 +54,32 @@ async fn upload(mut request: Request<Arc<Config>>) -> Result<Response> {
             humansize::format_size(size, humansize::DECIMAL)
         );
 
-        let mut buf = [0u8; 8192];
-        let mut total = 0;
-        let mut file = OpenOptions::new()
-            .write(true)
-            .create(true)
-            .open(Path::new(&request.state.upload_dir).join(&target_name))
-            .await?;
-        loop {
-            let read = request.request.body.read(&mut buf).await?;
-            if read == 0 {
-                break;
+        if size > 0 {
+            let mut buf = [0u8; 8192];
+            let mut total = 0;
+            let mut file = OpenOptions::new()
+                .write(true)
+                .create(true)
+                .open(Path::new(&request.state.upload_dir).join(&target_name))
+                .await?;
+            loop {
+                let read = request.request.body.read(&mut buf).await?;
+                if read == 0 {
+                    break;
+                }
+                let _written = file.write(&buf[..read]).await?;
+                total += read;
+                trace!("read/wrote {} bytes, {} total", read, total);
+                if total >= size {
+                    break;
+                }
             }
-            let _written = file.write(&buf[..read]).await?;
-            total += read;
-            trace!("read/wrote {} bytes, {} total", read, total);
-            if total >= size {
-                break;
-            }
-        }
 
-        file.flush().await?;
+            file.flush().await?;
+        } else {
+            tokio::fs::File::create(Path::new(&request.state.upload_dir).join(&target_name))
+                .await?;
+        }
 
         Ok(Response::from(target_name))
     } else {
