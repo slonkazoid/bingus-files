@@ -88,9 +88,27 @@ async fn upload(mut request: Request<Arc<RwLock<State>>>) -> Result<Response> {
         .get(&HeaderName::from("Content-Length"))
         .and_then(|s| s.parse::<u64>().ok())
     {
+        let ip = if request.state.read().await.config.behind_proxy
+            && request
+                .request
+                .headers
+                .contains_key(&HeaderName::from("X-Forwarded-For"))
+        {
+            request
+                .request
+                .headers
+                .get(&HeaderName::from("X-Forwarded-For"))
+                .unwrap_or_else(|| unreachable!())
+                .split(',')
+                .nth(0)
+                .unwrap_or_else(|| unreachable!())
+                .to_string()
+        } else {
+            request.address.ip().to_string()
+        };
         info!(
-            "({:#?}) Uploading {} as {} ({})",
-            request.address,
+            "({}) Uploading {} as {} ({})",
+            ip,
             file_name.bold(),
             target_name.bold(),
             humansize::format_size(size, humansize::DECIMAL)
@@ -158,6 +176,8 @@ async fn main() {
             Config::default()
         }
     };
+    debug!("{:#?}", config);
+
     let address = (config.host.clone(), config.port);
 
     if !try_exists(&config.upload_dir).await.unwrap() {

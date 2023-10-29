@@ -1,13 +1,13 @@
 use anyhow::Result;
 use log::debug;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::env;
 use tokio::{
     fs::{metadata, OpenOptions},
     io::AsyncReadExt,
 };
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Deserialize, Debug, Clone)]
 #[serde(default)]
 pub struct Config {
     pub host: String,
@@ -17,6 +17,7 @@ pub struct Config {
     pub prefix_length: u8,
     pub max_file_size: u64,
     pub stats_interval: u64,
+    pub behind_proxy: bool,
 }
 
 impl Default for Config {
@@ -29,6 +30,7 @@ impl Default for Config {
             prefix_length: 8,
             max_file_size: 1_000_000_000,
             stats_interval: 15,
+            behind_proxy: false,
         }
     }
 }

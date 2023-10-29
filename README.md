@@ -15,7 +15,10 @@ temp_dir=temp
 prefix_length=8
 max_file_size=1_000_000
 stats_interval=15
+behind_proxy=false
 ```
+
+set behind_proxy=true to trust the server to send the correct ip in X-Forwarded-For
 
 # Credits
 
