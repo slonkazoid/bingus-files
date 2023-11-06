@@ -75,7 +75,7 @@ fn get_random_prefix(length: usize) -> String {
 }
 
 async fn upload(mut request: Request<Arc<State>>) -> Result<Response> {
-    let file_name = request.params.get("file").expect("What");
+    let file_name = request.params.get("file").unwrap();
     let random_prefix = get_random_prefix(request.state.config.prefix_length as usize);
     let target_name = format!("{}.{}", random_prefix, sanitize_file_name(file_name));
 
@@ -101,7 +101,8 @@ async fn upload(mut request: Request<Arc<State>>) -> Result<Response> {
                 .headers
                 .get(&HeaderName::from("X-Forwarded-For"))
                 .unwrap_or_else(|| unreachable!())
-                .split(',').next()
+                .split(',')
+                .next()
                 .unwrap_or_else(|| unreachable!())
                 .to_string()
         } else {
