@@ -10,8 +10,8 @@ const prettyFileSize = (n) => {
 const prettyMs = (n) => {
 	let f = [];
 	if (n >= 3600000) f.push(Math.floor(n / 3600000) + "h");
-	if ((n % 3600000) >= 60000) f.push(Math.floor((n % 3600000) / 60000) + "m");
-	if ((n % 60000) >= 1000) f.push(Math.floor((n % 60000) / 1000) + "s");
+	if (n % 3600000 >= 60000) f.push(Math.floor((n % 3600000) / 60000) + "m");
+	if (n % 60000 >= 1000) f.push(Math.floor((n % 60000) / 1000) + "s");
 	if (n % 1000) f.push(Math.floor(n % 1000) + "ms");
 	return f.join(" ");
 };
@@ -63,6 +63,8 @@ form.addEventListener("submit", (e) => {
 });
 
 fileInput.addEventListener("change", (e) => {
+	let start = performance.now();
+
 	let progress = addProgressBar();
 	let fileCount = fileInput.files.length;
 	progress.max = fileCount;
@@ -72,7 +74,7 @@ fileInput.addEventListener("change", (e) => {
 
 	let promises = [];
 
-	let start = performance.now();
+	let errors = 0;
 
 	for (let file of fileInput.files) {
 		if (file.size > maxFileSize) {
@@ -92,7 +94,10 @@ fileInput.addEventListener("change", (e) => {
 			method: "PUT",
 			body: file,
 		})
-			.then((r) => r.text())
+			.then((r) => {
+				if (r.status === 200) return r.text();
+				else throw r;
+			})
 			.then((fileName) => {
 				let p = document.createElement("p");
 				p.append("uploaded ");
@@ -105,6 +110,7 @@ fileInput.addEventListener("change", (e) => {
 				progress.value = parseFloat(progress.value) + 1;
 			})
 			.catch((error) => {
+				errors++;
 				console.error(error);
 				let p = document.createElement("p");
 				p.append(
@@ -117,9 +123,9 @@ fileInput.addEventListener("change", (e) => {
 
 	Promise.all(promises).then(() => {
 		let p = document.createElement("p");
-		p.innerText = `uploaded ${fileCount} files in ${prettyMs(
-			performance.now() - start
-		)}`;
+		p.innerText = `uploaded ${
+			fileCount - errors
+		}/${fileCount} files in ${prettyMs(performance.now() - start)}`;
 		logged.replaceWith(p);
 		updateStats();
 	});
