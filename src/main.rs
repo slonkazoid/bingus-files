@@ -16,7 +16,7 @@ use rand::Rng;
 use serde::Serialize;
 use tokio::{
     fs::{try_exists, OpenOptions},
-    io::{AsyncReadExt, AsyncWriteExt},
+    io::{AsyncReadExt, AsyncWriteExt, BufWriter},
     sync::RwLock,
     task,
     time::sleep,
@@ -32,7 +32,7 @@ struct Stats {
 #[derive(Debug)]
 struct State {
     pub config: Config,
-    pub stats: Stats,
+    pub stats: RwLock<Stats>,
 }
 
 fn refresh_stats(config: &Config) -> Result<Stats> {
@@ -66,18 +66,20 @@ fn sanitize_file_name(name: &str) -> String {
     .to_string()
 }
 
-async fn upload(mut request: Request<Arc<RwLock<State>>>) -> Result<Response> {
-    let config = request.state.read().await.config.clone();
-
-    let file_name = request.params.get("file").expect("What");
-    let random_prefix: String = rand::thread_rng()
+fn get_random_prefix(length: usize) -> String {
+    rand::thread_rng()
         .sample_iter(rand::distributions::Alphanumeric)
-        .take(config.prefix_length as usize)
+        .take(length)
         .map(char::from)
-        .collect();
+        .collect()
+}
+
+async fn upload(mut request: Request<Arc<State>>) -> Result<Response> {
+    let file_name = request.params.get("file").expect("What");
+    let random_prefix = get_random_prefix(request.state.config.prefix_length as usize);
     let target_name = format!("{}.{}", random_prefix, sanitize_file_name(file_name));
 
-    if try_exists(Path::new(&config.upload_dir).join(&target_name)).await? {
+    if try_exists(Path::new(&request.state.config.upload_dir).join(&target_name)).await? {
         // We got extremely unlucky (62^8 by default)
         return Ok(Response::from_code(500));
     }
@@ -88,7 +90,7 @@ async fn upload(mut request: Request<Arc<RwLock<State>>>) -> Result<Response> {
         .get(&HeaderName::from("Content-Length"))
         .and_then(|s| s.parse::<u64>().ok())
     {
-        let ip = if request.state.read().await.config.behind_proxy
+        let ip = if request.state.config.behind_proxy
             && request
                 .request
                 .headers
@@ -99,8 +101,7 @@ async fn upload(mut request: Request<Arc<RwLock<State>>>) -> Result<Response> {
                 .headers
                 .get(&HeaderName::from("X-Forwarded-For"))
                 .unwrap_or_else(|| unreachable!())
-                .split(',')
-                .nth(0)
+                .split(',').next()
                 .unwrap_or_else(|| unreachable!())
                 .to_string()
         } else {
@@ -114,23 +115,24 @@ async fn upload(mut request: Request<Arc<RwLock<State>>>) -> Result<Response> {
             humansize::format_size(size, humansize::DECIMAL)
         );
 
-        if size > config.max_file_size {
+        if size > request.state.config.max_file_size {
             return Ok(Response::from_code(400));
         }
         if size > 0 {
             let mut buf = [0u8; 8192];
             let mut total = 0;
-            let mut file = OpenOptions::new()
+            let file = OpenOptions::new()
                 .write(true)
                 .create(true)
-                .open(Path::new(&config.upload_dir).join(&target_name))
+                .open(Path::new(&request.state.config.upload_dir).join(&target_name))
                 .await?;
+            let mut writer = BufWriter::new(file);
             loop {
                 let read = request.request.body.read(&mut buf).await?;
                 if read == 0 {
                     break;
                 }
-                let _written = file.write(&buf[..read]).await?;
+                let _written = writer.write(&buf[..read]).await?;
                 total += read;
                 trace!("read/wrote {} bytes, {} total", read, total);
                 if total as u64 >= size {
@@ -138,14 +140,15 @@ async fn upload(mut request: Request<Arc<RwLock<State>>>) -> Result<Response> {
                 }
             }
 
-            file.flush().await?;
+            writer.flush().await?;
 
-            request.state.write().await.stats.storage_used += size as u64;
+            request.state.stats.write().await.storage_used += size;
         } else {
-            tokio::fs::File::create(Path::new(&config.upload_dir).join(&target_name)).await?;
+            tokio::fs::File::create(Path::new(&request.state.config.upload_dir).join(&target_name))
+                .await?;
         }
 
-        request.state.write().await.stats.files_stored += 1;
+        request.state.stats.write().await.files_stored += 1;
 
         Ok(Response::from(target_name))
     } else {
@@ -153,9 +156,8 @@ async fn upload(mut request: Request<Arc<RwLock<State>>>) -> Result<Response> {
     }
 }
 
-async fn get_stats(request: Request<Arc<RwLock<State>>>) -> Result<String> {
-    let json = serde_json::to_string(&request.state.read().await.stats.clone())?;
-    Ok(json)
+async fn get_stats(request: Request<Arc<State>>) -> Result<String> {
+    Ok(serde_json::to_string(&*request.state.stats.read().await)?)
 }
 
 #[tokio::main]
@@ -181,16 +183,21 @@ async fn main() {
     let address = (config.host.clone(), config.port);
 
     if !try_exists(&config.upload_dir).await.unwrap() {
-        tokio::fs::create_dir(&config.upload_dir).await.unwrap();
+        debug!("Creating upload directory");
+        tokio::fs::create_dir_all(&config.upload_dir).await.unwrap();
     }
     if !try_exists(&config.temp_dir).await.unwrap() {
-        tokio::fs::create_dir(&config.temp_dir).await.unwrap();
+        debug!("Creating temp directory");
+        tokio::fs::create_dir_all(&config.temp_dir).await.unwrap();
     }
 
     let files_dir = config.upload_dir.clone().leak();
     let stats = refresh_stats(&config).unwrap();
 
-    let state = Arc::new(RwLock::new(State { config, stats }));
+    let state = Arc::new(State {
+        config,
+        stats: RwLock::new(stats),
+    });
 
     let app = App::new(state.clone())
         .add_handler(cool_macro!(PUT / :file), upload)
@@ -203,12 +210,11 @@ async fn main() {
 
     let state = state.clone();
     task::spawn(async move {
-        let config = &state.read().await.config.clone();
         loop {
-            sleep(Duration::from_secs(config.stats_interval)).await;
+            sleep(Duration::from_secs(state.config.stats_interval)).await;
             debug!("Refreshing stats");
-            let stats = refresh_stats(config).unwrap();
-            state.write().await.stats = stats;
+            let stats = refresh_stats(&state.config).unwrap();
+            *state.stats.write().await = stats;
         }
     });
 
