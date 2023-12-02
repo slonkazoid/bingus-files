@@ -14,7 +14,7 @@ configuration is read in this order:
 4. `/etc/bingus-files/config.toml` (not on windows)
 
 ```toml
-host=0.0.0.0
+host="0.0.0.0"
 port=4040
 upload_dir=files
 temp_dir=temp
