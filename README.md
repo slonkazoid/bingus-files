@@ -1,6 +1,6 @@
 # bingus-files
 
-[floppa-files](https://github.com/gosher-studios/floppa-files) competitor
+[floppa-files](https://github.com/gosher-studios/floppa-files) alternative
 
 rewritten with axum
 
