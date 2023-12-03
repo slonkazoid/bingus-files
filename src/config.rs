@@ -4,10 +4,10 @@ use std::{
 };
 
 use anyhow::Result;
-use log::trace;
 use serde::Deserialize;
 use thiserror::Error;
 use tokio::{fs::OpenOptions, io::AsyncReadExt};
+use tracing::debug;
 
 #[derive(Deserialize, Debug, Clone)]
 #[serde(default)]
@@ -20,6 +20,7 @@ pub struct Config {
     pub max_file_size: usize,
     pub max_file_name_length: usize,
     pub stats_interval: u64,
+    pub concurrency_limit: usize,
     pub behind_proxy: bool,
 }
 
@@ -32,8 +33,9 @@ impl Default for Config {
             temp_dir: "temp".to_string(),
             prefix_length: 8,
             max_file_size: 1_000_000_000,
-            max_file_name_length: 100,
+            max_file_name_length: 200,
             stats_interval: 60,
+            concurrency_limit: 512,
             behind_proxy: false,
         }
     }
@@ -60,42 +62,32 @@ pub async fn load() -> Result<(Config, PathBuf)> {
     Ok((load_from(&config_file).await?, config_file))
 }
 
-/// Find configuration file.
-///
-/// Checks in these locations:
-///
-/// 1. `$BINGUS_CONFIG`
-/// 2. `config.toml`
-/// 3. `$XDG_CONFIG_HOME/bingus-files/config.toml`
-/// 4. `/etc/bingus-files/config.toml` (`nul` on windows)
-///
-/// # Errors
-///
-/// This function will return an error if there was a problem with IO, or if none of the files
-/// exist.
 pub fn find_config() -> Result<PathBuf, FindConfigError> {
     if let Ok(env_var) = env::var("BINGUS_CONFIG") {
-        Ok(Path::new(&env_var).into())
+        Ok(PathBuf::from(&env_var))
     } else {
-        let config_home = match env::var("XDG_CONFIG_HOME") {
-            Ok(config_home) => Path::new(&config_home).to_path_buf(),
-            Err(_) => Path::new(&env::var("HOME").unwrap_or_default()).join(".config"),
+        let config_dir = if cfg!(target_os = "windows") {
+            PathBuf::from(&env::var("APPDATA").unwrap_or_default())
+        } else {
+            match env::var("XDG_CONFIG_HOME") {
+                Ok(config_home) => PathBuf::from(&config_home),
+                Err(_) => PathBuf::from(&env::var("HOME").unwrap_or_default()).join(".config"),
+            }
         };
 
         let locations = [
-            Path::new("config.toml").to_path_buf(),
-            config_home.join("bingus-files").join("config.toml"),
+            PathBuf::from("config.toml"),
+            config_dir.join("bingus-files").join("config.toml"),
             #[cfg(not(target_os = "windows"))]
-            Path::new("/")
+            PathBuf::from("/")
                 .join("etc")
                 .join("bingus-files")
                 .join("config.toml"),
         ];
         for path in locations {
+            debug!("checking if configuration exists at: {}", path.display());
             if fs::try_exists(&path)? {
                 return Ok(path);
-            } else {
-                trace!("doesn't exist: {}", path.display());
             }
         }
 

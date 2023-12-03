@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>bingus-files</title>
+		<link rel="stylesheet" href="style.css" />
+		<script src="main.js" type="module" defer></script>
+	</head>
+	<body>
+		<main>
+			<h1>
+				<a href="https://gitlab.com/hyron-devs/bingus-files"
+					>bingus-files 2</a
+				>
+			</h1>
+			<p>
+				rewritten in rust, now faster than ever with a
+				<a href="https://gitlab.com/hyron-devs/bingus-http"
+					>custom http implementation</a
+				>
+			</p>
+			<p>
+				also check out
+				<a href="https://files.colon3.lol/">floppa-files</a>!
+			</p>
+
+			<details>
+				<summary><b>Terms of Service</b></summary>
+				<ul>
+					<li>don't upload illegal or harmful content</li>
+					<li>don't attack the server</li>
+					<li>
+						your ip address is logged with the name of the file you
+						uploaded
+					</li>
+					<li>
+						theoretically i could look at all the files you upload
+						but i dont care
+						<br />
+						still, dont use this service for uploading sensitive
+						data without encrypting first
+					</li>
+				</ul>
+				<p>
+					if you have any complaints or takedown requests, contact me
+					on one of these platforms:
+					<br />
+					matrix: @alifurkan:matrix.org
+					<br />
+					email: alifurkanyildiz [AT] gmail dot com
+					<br />
+					gpg key: 30DDF657DC25EF06FDDCD9B229DFCF2217C06A0A (on
+					keys.openpgp.org)
+				</p>
+			</details>
+
+			<hr />
+
+			<table>
+				<tr>
+					<td>Max upload size:</td>
+					<td><span id="maxUploadSize"></span></td>
+				</tr>
+				<tr>
+					<td>Files stored:</td>
+					<td><span id="filesStored"></span></td>
+				</tr>
+				<tr>
+					<td>Storage used:</td>
+					<td><span id="storageUsed"></span></td>
+				</tr>
+			</table>
+			<p>
+				You can also use <code>curl</code> to upload files:
+				<code id="curl-command"></code>
+			</p>
+			<script>
+				document.getElementById(
+					"curl-command"
+				).innerText = `curl -T file ${location.origin}`;
+			</script>
+
+			<form action="#">
+				<input type="file" id="file" name="file" multiple />
+				<label for="file">
+					<p>
+						choose files to upload
+						<br />
+						<b
+							>by uploading a file, you agree to the terms of
+							service</b
+						>
+					</p>
+				</label>
+			</form>
+
+			<div id="output">
+				<p>uploaded files will show up here</p>
+			</div>
+		</main>
+	</body>
+</html>

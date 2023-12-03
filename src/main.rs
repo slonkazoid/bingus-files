@@ -1,4 +1,4 @@
-#![feature(async_closure, cfg_match, fs_try_exists, io_error_more, let_chains)]
+#![feature(async_closure, fs_try_exists, io_error_more, let_chains)]
 
 mod config;
 
@@ -8,7 +8,7 @@ use axum::{
     body::Body,
     extract::{ConnectInfo, DefaultBodyLimit, Path, Request, State},
     http::{HeaderMap, StatusCode},
-    middleware::Next,
+    middleware::{from_fn_with_state, Next},
     response::Response,
     routing::{get, get_service, put},
     Router,
@@ -18,7 +18,6 @@ use humansize::{format_size, DECIMAL};
 #[cfg(target_os = "linux")]
 #[cfg(feature = "fallocate")]
 use libc::{fallocate, strerror};
-use log::LevelFilter;
 use owo_colors::{OwoColorize, Style};
 use rand::Rng;
 use serde::Serialize;
@@ -35,15 +34,14 @@ use std::{io, net::SocketAddr};
 use tokio::{
     fs::try_exists,
     net::TcpListener,
-    task,
     time::{sleep, Instant},
 };
 use tokio_util::io::StreamReader;
-use tower_http::services::ServeDir;
-#[cfg(not(target_os = "linux"))]
-#[cfg(feature = "fallocate")]
-use tracing::warn;
-use tracing::{debug, error, info, trace};
+use tower::limit::ConcurrencyLimitLayer;
+use tower_http::{compression::Compression, services::ServeDir, trace::TraceLayer};
+#[allow(unused_imports)]
+use tracing::{debug, error, info, trace, warn};
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[derive(Debug, Clone, Serialize)]
 struct Stats {
@@ -148,6 +146,12 @@ async fn upload(
     }
 
     if let Err(err) = async {
+        info!(
+            "uploading {} file {}",
+            format_size(file_size, DECIMAL),
+            file_name
+        );
+
         let mut out_file = tokio::fs::OpenOptions::new()
             .write(true)
             .create(true)
@@ -155,8 +159,6 @@ async fn upload(
             .open(&file_path)
             .await?;
 
-        // FALLOC_FL_PUNCH_HOLE
-        // i love prenature optimization
         #[cfg(target_os = "linux")]
         #[cfg(feature = "fallocate")]
         if file_size > 0 {
@@ -280,10 +282,12 @@ async fn logger(
 
 #[tokio::main]
 async fn main() {
-    //tracing_subscriber::fmt::init();
-    env_logger::builder()
-        .filter_level(LevelFilter::Info)
-        .parse_default_env()
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "bingus_files=info".into()),
+        )
+        .with(tracing_subscriber::fmt::layer())
         .init();
 
     #[cfg(not(target_os = "linux"))]
@@ -304,8 +308,6 @@ async fn main() {
 
     debug!("{:#?}", config);
 
-    let address = (config.host.clone(), config.port);
-
     if !try_exists(&config.upload_dir).await.unwrap() {
         debug!("Creating upload directory");
         tokio::fs::create_dir_all(&config.upload_dir).await.unwrap();
@@ -322,20 +324,34 @@ async fn main() {
         stats: RwLock::new(stats),
     });
 
-    let serve_files = ServeDir::new(&config.upload_dir);
+    let serve_files = ServeDir::new(&config.upload_dir).precompressed_gzip();
+    let serve_static = Compression::new(ServeDir::new(path::Path::new("static")));
 
     let app = Router::new()
         .nest_service("/file", get_service(serve_files))
-        .route(
-            "/:file",
-            put(upload).layer(DefaultBodyLimit::max(config.max_file_size)),
+        .nest_service(
+            "/",
+            get_service(serve_static).fallback_service(
+                Router::new().route(
+                    "/:file",
+                    put(upload)
+                        .layer(DefaultBodyLimit::max(config.max_file_size))
+                        .with_state(state.clone()),
+                ),
+            ),
         )
         .route("/stats", get(get_stats))
-        .layer(axum::middleware::from_fn_with_state(state.clone(), logger))
+        .layer(from_fn_with_state(state.clone(), logger))
+        .layer(TraceLayer::new_for_http())
         .with_state(state.clone());
+    let app = if config.concurrency_limit != 0 {
+        app.layer(ConcurrencyLimitLayer::new(config.concurrency_limit))
+    } else {
+        app
+    };
 
     let state = state.clone();
-    task::spawn(async move {
+    tokio::spawn(async move {
         loop {
             sleep(Duration::from_secs(state.config.stats_interval)).await;
             debug!("Refreshing stats");
@@ -344,12 +360,13 @@ async fn main() {
         }
     });
 
+    let address = (config.host.as_str(), config.port);
     let listener = TcpListener::bind(address).await.unwrap();
     let local_addr = listener.local_addr().unwrap();
     info!(
-        "Listening on {}://{}:{}",
-        "http".bold(),
-        local_addr.ip().to_string().bright_blue().bold(),
+        "listening on {}://{}:{}",
+        "http".bold(), // it will be revealed to you in a dream
+        local_addr.ip().to_string().green().bold(),
         local_addr.port().to_string().blue().bold()
     );
     axum::serve(
