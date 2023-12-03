@@ -60,7 +60,7 @@ type ArcState = Arc<AppState>;
 
 macro_rules! silly {
     ($code:ident) => {
-        (StatusCode::$code, StatusCode::$code.as_str().to_string())
+        (StatusCode::$code, StatusCode::$code.to_string())
     };
 }
 
@@ -103,24 +103,41 @@ fn get_random_prefix(length: usize) -> String {
         .collect()
 }
 
+fn get_ip(headers: &HeaderMap) -> Option<String> {
+    unsafe {
+        if headers.contains_key("x-forwarded-for")
+            && let Ok(value) = headers.get("x-forwarded-for").unwrap_unchecked().to_str()
+        {
+            Some(value.split(',').next().unwrap_unchecked().to_string())
+        } else {
+            None
+        }
+    }
+}
+
 async fn get_stats(State(state): State<ArcState>) -> String {
     serde_json::to_string(&*state.stats.read().unwrap()).unwrap()
 }
 
 async fn upload(
     State(state): State<ArcState>,
+    ConnectInfo(connect_info): ConnectInfo<SocketAddr>,
     Path(path): Path<String>,
     headers: HeaderMap,
     body: Body,
 ) -> Result<String, (StatusCode, String)> {
-    let file_size = if let Some(content_length) = headers.get("content-length")
-        && let Ok(content_length) = content_length.to_str()
-        && let Ok(content_length) = content_length.parse::<u64>()
+    let file_size = match headers
+        .get("content-length")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.parse::<usize>().ok())
     {
-        content_length
-    } else {
-        return Err(silly!(BAD_REQUEST));
+        Some(content_length) => content_length,
+        None => return Err(silly!(BAD_REQUEST)),
     };
+
+    if file_size > state.config.max_file_size {
+        return Err(silly!(PAYLOAD_TOO_LARGE));
+    }
 
     if path.len() > state.config.max_file_name_length {
         return Err(silly!(BAD_REQUEST));
@@ -147,7 +164,13 @@ async fn upload(
 
     if let Err(err) = async {
         info!(
-            "uploading {} file {}",
+            "{} is uploading {} file {}",
+            if state.config.behind_proxy {
+                get_ip(&headers)
+            } else {
+                None
+            }
+            .unwrap_or_else(|| connect_info.ip().to_string()),
             format_size(file_size, DECIMAL),
             file_name
         );
@@ -235,20 +258,12 @@ async fn logger(
     request: Request,
     next: Next,
 ) -> Response {
-    let ip = unsafe {
-        if state.config.behind_proxy
-            && request.headers().contains_key("x-forwarded-for")
-            && let Ok(value) = request
-                .headers()
-                .get("x-forwarded-for")
-                .unwrap_unchecked()
-                .to_str()
-        {
-            value.split(',').next().unwrap_unchecked().to_string()
-        } else {
-            connect_info.ip().to_string()
-        }
-    };
+    let ip = if state.config.behind_proxy {
+        get_ip(request.headers())
+    } else {
+        None
+    }
+    .unwrap_or_else(|| connect_info.ip().to_string());
 
     let path = request.uri().path().to_owned();
     let method = request.method().to_owned();
