@@ -192,7 +192,7 @@ async fn upload(
             );
             let fd = out_file.as_raw_fd();
             unsafe {
-                if fallocate(fd, 0, 0, file_size as i64) == -1 {
+                if fallocate(fd, 0, 0, file_size.try_into().unwrap()) == -1 {
                     let errno = *libc::__errno_location();
                     error!(
                         "Error while fallocating: {}",
