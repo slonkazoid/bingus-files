@@ -137,15 +137,15 @@ async fn upload(
 
     if let Err(err) = async {
         info!(
-            "{} is uploading {} file {}",
+            "{} is uploading file {} ({})",
             if state.config.behind_proxy {
                 get_ip(&headers)
             } else {
                 None
             }
             .unwrap_or_else(|| connect_info.ip().to_string()),
+            file_name.if_supports_color(Stderr, |text| text.bold()),
             format_size(file_size, DECIMAL),
-            file_name
         );
 
         let mut out_file = tokio::fs::OpenOptions::new()
