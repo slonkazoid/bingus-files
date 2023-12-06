@@ -102,7 +102,7 @@ fileInput.addEventListener("change", (e) => {
 				let p = document.createElement("p");
 				p.append("uploaded ");
 				let a = document.createElement("a");
-				a.href = `${location.origin}/file/${fileName}`;
+				a.href = `${location.origin}/${fileName}`;
 				a.innerText = fileName;
 				p.append(a);
 				p.append(` (${prettyMs(performance.now() - start)})`);

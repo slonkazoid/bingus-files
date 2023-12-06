@@ -340,10 +340,10 @@ async fn main() {
     });
 
     let serve_files = ServeDir::new(&config.upload_dir).precompressed_gzip();
-    let serve_static = Compression::new(ServeDir::new(path::Path::new("static")));
+    let serve_static =
+        Compression::new(ServeDir::new(path::Path::new("static")).fallback(serve_files));
 
     let app = Router::new()
-        .nest_service("/file", get_service(serve_files))
         .nest_service(
             "/",
             get_service(serve_static).fallback_service(
@@ -379,10 +379,9 @@ async fn main() {
     let listener = TcpListener::bind(address).await.unwrap();
     let local_addr = listener.local_addr().unwrap();
     info!(
-        "listening on {}://{}:{}",
-        "http".bold(), // it will be revealed to you in a dream
-        local_addr.ip().to_string().green().bold(),
-        local_addr.port().to_string().blue().bold()
+        "listening on http://{}:{}",
+        local_addr.ip().bold(),
+        local_addr.port().bold()
     );
     axum::serve(
         listener,
