@@ -1,8 +1,10 @@
 #![feature(async_closure, fs_try_exists, io_error_more, let_chains)]
 
 mod config;
+mod silly;
 
 use crate::config::Config;
+use crate::silly::*;
 use anyhow::Result;
 use axum::{
     body::Body,
@@ -18,8 +20,7 @@ use humansize::{format_size, DECIMAL};
 #[cfg(target_os = "linux")]
 #[cfg(feature = "fallocate")]
 use libc::{fallocate, strerror};
-use owo_colors::{OwoColorize, Style};
-use rand::Rng;
+use owo_colors::{OwoColorize, Stream::Stderr};
 use serde::Serialize;
 #[cfg(target_os = "linux")]
 #[cfg(feature = "fallocate")]
@@ -85,34 +86,6 @@ fn refresh_stats(config: &Config) -> Result<Stats> {
         files_stored,
         storage_used,
     })
-}
-
-fn sanitize_file_name(name: &str) -> String {
-    name.replace(
-        ['/', '\\', '&', '?', '"', '\'', '*', '~', '|', ':', '<', '>'],
-        "_",
-    )
-    .to_string()
-}
-
-fn get_random_prefix(length: usize) -> String {
-    rand::thread_rng()
-        .sample_iter(rand::distributions::Alphanumeric)
-        .take(length)
-        .map(char::from)
-        .collect()
-}
-
-fn get_ip(headers: &HeaderMap) -> Option<String> {
-    unsafe {
-        if headers.contains_key("x-forwarded-for")
-            && let Ok(value) = headers.get("x-forwarded-for").unwrap_unchecked().to_str()
-        {
-            Some(value.split(',').next().unwrap_unchecked().to_string())
-        } else {
-            None
-        }
-    }
 }
 
 async fn get_stats(State(state): State<ArcState>) -> String {
@@ -277,17 +250,9 @@ async fn logger(
     info!(
         "({}) {} {} {} ({:#?})",
         ip,
-        status_code
-            .style(match status_code {
-                100..=199 => Style::new().white(),
-                200..=299 => Style::new().bright_green(),
-                300..=399 => Style::new().yellow(),
-                400..=499 => Style::new().bright_red(),
-                500..=599 => Style::new().red(),
-                _ => Style::new(),
-            })
-            .bold(),
-        method.bold(),
+        status_code.if_supports_color(Stderr, |text| text
+            .style(color_status_code(status_code).bold())),
+        method.if_supports_color(Stderr, |text| text.bold()),
         path,
         elapsed
     );
