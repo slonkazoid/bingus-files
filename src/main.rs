@@ -9,9 +9,10 @@ use anyhow::Result;
 use axum::{
     body::Body,
     extract::{ConnectInfo, DefaultBodyLimit, Path, Request, State},
-    http::{HeaderMap, StatusCode},
+    handler::HandlerWithoutStateExt,
+    http::{HeaderMap, HeaderValue, StatusCode},
     middleware::{from_fn_with_state, Next},
-    response::Response,
+    response::{IntoResponse, Response},
     routing::{get, get_service, put},
     Router,
 };
@@ -32,6 +33,7 @@ use std::{
     time::Duration,
 };
 use std::{io, net::SocketAddr};
+use thiserror::Error;
 use tokio::{
     fs::try_exists,
     net::TcpListener,
@@ -43,6 +45,12 @@ use tower_http::{compression::Compression, services::ServeDir, trace::TraceLayer
 #[allow(unused_imports)]
 use tracing::{debug, error, info, trace, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+
+macro_rules! silly {
+    ($code:ident) => {
+        (StatusCode::$code, StatusCode::$code.to_string())
+    };
+}
 
 #[derive(Debug, Clone, Serialize)]
 struct Stats {
@@ -59,10 +67,44 @@ struct AppState {
 
 type ArcState = Arc<AppState>;
 
-macro_rules! silly {
-    ($code:ident) => {
-        (StatusCode::$code, StatusCode::$code.to_string())
-    };
+#[derive(Debug, Error)]
+enum AppError {
+    #[error("Fuck you")]
+    FuckYou,
+    #[error("File was above max size")]
+    FileAboveMaxSize,
+    #[error("File already exists")]
+    Conflict,
+    #[error(transparent)]
+    IoError(io::Error),
+    /*#[error(transparent)]
+    Other(anyhow::Error),*/
+}
+
+impl IntoResponse for AppError {
+    fn into_response(self) -> Response {
+        error!("{}", self);
+        match self {
+            Self::FuckYou => silly!(BAD_REQUEST),
+            Self::FileAboveMaxSize => silly!(PAYLOAD_TOO_LARGE),
+            Self::Conflict => silly!(CONFLICT),
+            Self::IoError(err) => match err.kind() {
+                io::ErrorKind::FilesystemQuotaExceeded => silly!(INSUFFICIENT_STORAGE),
+                _ => silly!(INTERNAL_SERVER_ERROR),
+            },
+            //_ => silly!(INTERNAL_SERVER_ERROR),
+        }
+        .into_response()
+    }
+}
+
+impl<E> From<E> for AppError
+where
+    E: Into<io::Error>,
+{
+    fn from(err: E) -> Self {
+        Self::IoError(err.into())
+    }
 }
 
 fn refresh_stats(config: &Config) -> Result<Stats> {
@@ -98,22 +140,22 @@ async fn upload(
     Path(path): Path<String>,
     headers: HeaderMap,
     body: Body,
-) -> Result<String, (StatusCode, String)> {
+) -> Result<String, AppError> {
     let file_size = match headers
         .get("content-length")
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.parse::<usize>().ok())
     {
         Some(content_length) => content_length,
-        None => return Err(silly!(BAD_REQUEST)),
+        None => return Err(AppError::FuckYou),
     };
 
     if file_size > state.config.max_file_size {
-        return Err(silly!(PAYLOAD_TOO_LARGE));
+        return Err(AppError::FileAboveMaxSize);
     }
 
     if path.len() > state.config.max_file_name_length {
-        return Err(silly!(BAD_REQUEST));
+        return Err(AppError::FuckYou);
     }
 
     let file_name = if state.config.prefix_length > 0 {
@@ -128,11 +170,8 @@ async fn upload(
 
     let file_path = path::Path::new(&state.config.upload_dir).join(&file_name);
 
-    if match tokio::fs::try_exists(&file_path).await {
-        Ok(exists) => exists,
-        Err(err) => return Err((StatusCode::INTERNAL_SERVER_ERROR, err.to_string())),
-    } {
-        return Err(silly!(CONFLICT));
+    if tokio::fs::try_exists(&file_path).await? {
+        return Err(AppError::Conflict);
     }
 
     if let Err(err) = async {
@@ -213,13 +252,7 @@ async fn upload(
             }
         };
 
-        Err((
-            match err.kind() {
-                io::ErrorKind::FilesystemQuotaExceeded => StatusCode::INSUFFICIENT_STORAGE,
-                _ => StatusCode::INTERNAL_SERVER_ERROR,
-            },
-            err.to_string(),
-        ))
+        Err(err.into())
     } else {
         Ok(file_name)
     }
@@ -242,7 +275,7 @@ async fn logger(
     let method = request.method().to_owned();
 
     let start = Instant::now();
-    let response = next.run(request).await;
+    let mut response = next.run(request).await;
     let elapsed = start.elapsed();
 
     let status_code = response.status().as_u16();
@@ -257,6 +290,9 @@ async fn logger(
         elapsed
     );
 
+    response
+        .headers_mut()
+        .append("upgrade", HeaderValue::from_static("HTTP/2"));
     response
 }
 

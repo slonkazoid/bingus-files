@@ -15,7 +15,7 @@ lto = "thin"
 
 [dependencies]
 anyhow = "1.0.75"
-axum = { version = "0.7.1", default-features = false, features = ["http1", "tokio"] }
+axum = { version = "0.7.1", default-features = false, features = ["http1", "http2", "tokio"] }
 futures = "0.3.29"
 humansize = "2.1.3"
 libc = { version = "0.2.150", optional = true }

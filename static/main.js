@@ -1,3 +1,18 @@
+const supportsRequestStreams = (() => {
+	let duplexAccessed = false;
+
+	const hasContentType = new Request("", {
+		body: new ReadableStream(),
+		method: "POST",
+		get duplex() {
+			duplexAccessed = true;
+			return "half";
+		},
+	}).headers.has("Content-Type");
+
+	return duplexAccessed && !hasContentType;
+})();
+
 const prettyFileSize = (n) => {
 	if (n > 0.5 * 1000 ** 5) return (n / 1000 ** 5).toFixed(2) + " PB";
 	else if (n > 0.5 * 1000 ** 4) return (n / 1000 ** 4).toFixed(2) + " TB";
@@ -62,7 +77,7 @@ form.addEventListener("submit", (e) => {
 	fileInput.dispatchEvent(new Event("change"));
 });
 
-fileInput.addEventListener("change", (e) => {
+fileInput.addEventListener("change", async (e) => {
 	let start = performance.now();
 
 	let progress = addProgressBar();
@@ -72,11 +87,18 @@ fileInput.addEventListener("change", (e) => {
 
 	let logged = log(`uploading ${fileCount} file${fileCount == 1 ? "" : "s"}`);
 
-	let promises = [];
-
 	let errors = 0;
 
-	for (let file of fileInput.files) {
+	let messages = [];
+
+	for (let file of fileInput.files)
+		messages.push(
+			log(`ẁaiting to upload ${file.name} (${prettyFileSize(file.size)})`)
+		);
+
+	for (let i = 0; i < fileInput.files.length; i++) {
+		let file = fileInput.files[i];
+
 		if (file.size > maxFileSize) {
 			log(
 				`${file.name} is bigger than max file size (${prettyFileSize(
@@ -88,47 +110,85 @@ fileInput.addEventListener("change", (e) => {
 
 		let start = performance.now();
 		console.log("uploading", file);
-		let logged = log(`uploading ${file.name}`);
+		let logged = document.createElement("p");
+		logged.innerText = `uploading ${file.name} (${prettyFileSize(
+			file.size
+		)})`;
+		messages[i].replaceWith(logged);
 
-		let p = fetch("/" + file.name, {
-			method: "PUT",
-			body: file,
-		})
-			.then((r) => {
-				if (r.status === 200) return r.text();
-				else throw r;
-			})
-			.then((fileName) => {
-				let p = document.createElement("p");
-				p.append("uploaded ");
-				let a = document.createElement("a");
-				a.href = `${location.origin}/${fileName}`;
-				a.innerText = fileName;
-				p.append(a);
-				p.append(` (${prettyMs(performance.now() - start)})`);
-				logged.replaceWith(p);
-				progress.value = parseFloat(progress.value) + 1;
-			})
-			.catch((error) => {
-				errors++;
-				console.error(error);
-				let p = document.createElement("p");
-				p.append(
-					"failed to upload file. see the console for more details"
-				);
-				logged.replaceWith(p);
+		let trackingStream;
+		if (supportsRequestStreams) {
+			let localProgress = document.createElement("progress");
+			localProgress.max = file.size;
+			localProgress.value = "0";
+			logged.appendChild(localProgress);
+
+			let uploaded = 0;
+			trackingStream = new TransformStream({
+				transform(chunk, controller) {
+					controller.enqueue(chunk);
+					uploaded += chunk.byteLength;
+					localProgress.value = uploaded;
+				},
 			});
-		promises.push(p);
+		}
+
+		let res;
+		try {
+			if (supportsRequestStreams) {
+				res = await fetch("/" + file.name, {
+					method: "PUT",
+					headers: {
+						"Content-Length": file.size,
+						"Content-Type": "application/octet-stream",
+					},
+					body: file.stream().pipeThrough(trackingStream),
+					duplex: "half",
+				});
+			} else {
+				res = await fetch("/" + file.name, {
+					method: "PUT",
+					body: file,
+				});
+			}
+		} catch (err) {
+			errors++;
+			console.error(err);
+			let p = document.createElement("p");
+			p.append(`failed to upload file. see the console for more details`);
+			logged.replaceWith(p);
+			continue;
+		}
+
+		// TODO: better error handling
+		if (res.status === 200) {
+			let fileName = await res.text();
+			let p = document.createElement("p");
+			p.append("uploaded ");
+			let a = document.createElement("a");
+			a.href = `${location.origin}/${fileName}`;
+			a.innerText = fileName;
+			p.append(a);
+			p.append(` (${prettyMs(performance.now() - start)})`);
+			logged.replaceWith(p);
+			progress.value = parseFloat(progress.value) + 1;
+		} else {
+			errors++;
+			console.error(res.status, res.statusText);
+			let p = document.createElement("p");
+			p.append(
+				`failed to upload file: ${res.statusText}. see the console for more details`
+			);
+			logged.replaceWith(p);
+		}
 	}
 
-	Promise.all(promises).then(() => {
-		let p = document.createElement("p");
-		p.innerText = `uploaded ${
-			fileCount - errors
-		}/${fileCount} files in ${prettyMs(performance.now() - start)}`;
-		logged.replaceWith(p);
-		updateStats();
-	});
+	let p = document.createElement("p");
+	p.innerText = `uploaded ${
+		fileCount - errors
+	}/${fileCount} files in ${prettyMs(performance.now() - start)}`;
+	logged.replaceWith(p);
+	updateStats();
 });
 
 setInterval(updateStats, 15000);
