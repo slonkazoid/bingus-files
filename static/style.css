@@ -47,8 +47,6 @@ a:visited {
 	border: none;
 	display: block;
 	text-align: center;
-
-	background-color: var(--ctp-latte-surface1);
 }
 
 progress {
@@ -102,10 +100,6 @@ progress {
 
 	a:visited {
 		color: var(--ctp-mocha-mauve);
-	}
-
-	#file {
-		background-color: var(--ctp-mocha-surface1);
 	}
 
 	progress {

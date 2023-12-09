@@ -9,7 +9,6 @@ use anyhow::Result;
 use axum::{
     body::Body,
     extract::{ConnectInfo, DefaultBodyLimit, Path, Request, State},
-    handler::HandlerWithoutStateExt,
     http::{HeaderMap, HeaderValue, StatusCode},
     middleware::{from_fn_with_state, Next},
     response::{IntoResponse, Response},
