@@ -53,7 +53,7 @@ progress {
 	width: 100%;
 	border: none;
 
-	color: var(--ctp-latte-surface2);
+	color: var(--ctp-latte-overlay2);
 }
 
 ::-moz-progress-bar,
@@ -103,7 +103,7 @@ progress {
 	}
 
 	progress {
-		color: var(--ctp-mocha-surface2);
+		color: var(--ctp-mocha-overlay2);
 	}
 
 	::-moz-progress-bar,

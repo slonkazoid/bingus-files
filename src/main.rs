@@ -225,6 +225,11 @@ async fn upload(
 
         tokio::io::copy(&mut reader, &mut out_file).await?;
 
+        let mut stats = state.stats.write().unwrap();
+
+        stats.files_stored += 1;
+        stats.max_file_size += file_size;
+
         Ok::<_, io::Error>(())
     }
     .await
