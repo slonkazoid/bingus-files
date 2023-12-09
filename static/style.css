@@ -51,9 +51,11 @@ a:visited {
 
 progress {
 	width: 100%;
-	border: none;
+	border: 2px solid;
 
-	color: var(--ctp-latte-overlay2);
+	border-color: var(--ctp-latte-text);
+	background-color: var(--ctp-latte-base);
+	color: var(--ctp-latte-pink);
 }
 
 ::-moz-progress-bar,
@@ -71,10 +73,6 @@ progress {
 	:root {
 		background-color: var(--ctp-mocha-base);
 		color: var(--ctp-mocha-text);
-	}
-
-	main {
-		border-color: --var(-ctp-mocha-crust);
 	}
 
 	code {
@@ -103,7 +101,9 @@ progress {
 	}
 
 	progress {
-		color: var(--ctp-mocha-overlay2);
+		border-color: var(--ctp-mocha-text);
+		background-color: var(--ctp-mocha-base);
+		color: var(--ctp-mocha-pink);
 	}
 
 	::-moz-progress-bar,
