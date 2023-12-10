@@ -1,7 +1,7 @@
 @import url("catppuccin.css");
 
 :root {
-	font-family: monospace;
+	font-family: "Hack Nerd Font", "Hack", monospace, sans-serif;
 
 	background-color: var(--ctp-latte-base);
 	color: var(--ctp-latte-text);
@@ -12,7 +12,8 @@ main {
 }
 
 code {
-	padding: 0.3em 0.5em;
+	line-height: 2em;
+	padding: 0.25em 0.5em;
 
 	background-color: var(--ctp-latte-surface0);
 	color: var(--ctp-latte-subtext1);
