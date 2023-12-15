@@ -9,7 +9,7 @@ use anyhow::Result;
 use axum::{
     body::Body,
     extract::{ConnectInfo, DefaultBodyLimit, Path, Request, State},
-    http::{HeaderMap, HeaderValue, StatusCode},
+    http::{HeaderMap, StatusCode},
     middleware::{from_fn_with_state, Next},
     response::{IntoResponse, Response},
     routing::{get, get_service, put},
@@ -176,7 +176,7 @@ async fn upload(
     if let Err(err) = async {
         info!(
             "{} is uploading file {} ({})",
-            if state.config.behind_proxy {
+            if state.config.http.behind_proxy {
                 get_ip(&headers)
             } else {
                 None
@@ -193,29 +193,32 @@ async fn upload(
             .open(&file_path)
             .await?;
 
-        #[cfg(target_os = "linux")]
-        #[cfg(feature = "fallocate")]
         if file_size > 0 {
-            trace!(
-                "fallocating {} for '{}'",
-                format_size(file_size, DECIMAL),
-                file_name
-            );
-            let fd = out_file.as_raw_fd();
-            unsafe {
-                if fallocate(fd, 0, 0, file_size.try_into().unwrap()) == -1 {
-                    let errno = *libc::__errno_location();
-                    error!(
-                        "Error while fallocating: {}",
-                        CStr::from_ptr(strerror(errno)).to_string_lossy()
+            #[cfg(target_os = "linux")]
+            #[cfg(feature = "fallocate")]
+            if state.config.fallocate {
+                unsafe {
+                    trace!(
+                        "fallocating {} for '{}'",
+                        format_size(file_size, DECIMAL),
+                        file_name
                     );
-                    if errno == libc::ENOTSUP {
-                        todo!()
-                    } else {
-                        return Err(io::Error::from_raw_os_error(errno));
+                    let fd = out_file.as_raw_fd();
+
+                    if fallocate(fd, 0, 0, file_size.try_into().unwrap()) == -1 {
+                        let errno = *libc::__errno_location();
+                        error!(
+                            "Error while fallocating: {}",
+                            CStr::from_ptr(strerror(errno)).to_string_lossy()
+                        );
+                        if errno == libc::ENOTSUP {
+                            warn!("Continuing anyways...");
+                        } else {
+                            return Err(io::Error::from_raw_os_error(errno));
+                        }
                     }
-                }
-            };
+                };
+            }
         }
 
         let mut reader = StreamReader::new(
@@ -268,7 +271,7 @@ async fn logger(
     request: Request,
     next: Next,
 ) -> Response {
-    let ip = if state.config.behind_proxy {
+    let ip = if state.config.http.behind_proxy {
         get_ip(request.headers())
     } else {
         None
@@ -279,7 +282,7 @@ async fn logger(
     let method = request.method().to_owned();
 
     let start = Instant::now();
-    let mut response = next.run(request).await;
+    let response = next.run(request).await;
     let elapsed = start.elapsed();
 
     let status_code = response.status().as_u16();
@@ -295,9 +298,6 @@ async fn logger(
     );
 
     response
-        .headers_mut()
-        .append("upgrade", HeaderValue::from_static("HTTP/2"));
-    response
 }
 
 #[tokio::main]
@@ -309,10 +309,6 @@ async fn main() {
         )
         .with(tracing_subscriber::fmt::layer())
         .init();
-
-    #[cfg(not(target_os = "linux"))]
-    #[cfg(feature = "fallocate")]
-    warn!("the 'fallocate' feature only works on linux");
 
     let config = match config::load().await {
         Ok(config) => {
@@ -327,6 +323,14 @@ async fn main() {
     };
 
     debug!("{:#?}", config);
+
+    if config.fallocate {
+        #[cfg(not(feature = "fallocate"))]
+        warn!("the fallocate option requires the 'fallocate' feature");
+        #[cfg(not(target_os = "linux"))]
+        #[cfg(feature = "fallocate")]
+        warn!("the 'fallocate' feature only works on linux");
+    }
 
     if !try_exists(&config.upload_dir).await.unwrap() {
         debug!("Creating upload directory");
@@ -364,8 +368,8 @@ async fn main() {
         .layer(from_fn_with_state(state.clone(), logger))
         .layer(TraceLayer::new_for_http())
         .with_state(state.clone());
-    let app = if config.concurrency_limit != 0 {
-        app.layer(ConcurrencyLimitLayer::new(config.concurrency_limit))
+    let app = if config.http.concurrency_limit != 0 {
+        app.layer(ConcurrencyLimitLayer::new(config.http.concurrency_limit))
     } else {
         app
     };
@@ -380,7 +384,7 @@ async fn main() {
         }
     });
 
-    let address = (config.host.as_str(), config.port);
+    let address = (config.http.host.as_str(), config.http.port);
     let listener = TcpListener::bind(address).await.unwrap();
     let local_addr = listener.local_addr().unwrap();
     info!(
@@ -388,6 +392,7 @@ async fn main() {
         local_addr.ip().bold(),
         local_addr.port().bold()
     );
+
     axum::serve(
         listener,
         app.into_make_service_with_connect_info::<SocketAddr>(),

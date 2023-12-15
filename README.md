@@ -23,8 +23,6 @@ Configuration files are read in this order:
 ### Example configuration file (all defaults)
 
 ```toml
-host="0.0.0.0"            # host to listen on
-port=4040                 # port to listen on
 upload_dir="files"        # where to store uploaded files
 temp_dir="temp"           # unused at the moment
 prefix_length=8           # controls the length of the random prefix prepended to
@@ -33,9 +31,18 @@ max_file_size=1000000000  # self explanatory (1 GB)
 max_file_name_length=200  # self explanatory
 stats_interval=60         # how many seconds to wait between stats refreshes,
                           # set to 0 to disable
+fallocate=true            # use the `fallocate(2)` syscall (linux only, requires
+                          # feature `fallocate`)
+
+[http]
+host="0.0.0.0"            # host to listen on
+port=4040                 # port to listen on
 concurrency_limit=512     # max number of threads to launch for request handling,
                           # set to 0 for unlimited
 behind_proxy=false        # trust the X-Forwarded-For header
+
+[db]                      # database options (not implemented)
+enable=false              # enable database
 ```
 
 ## `fallocate(2)` support

@@ -11,32 +11,62 @@ use tracing::debug;
 
 #[derive(Deserialize, Debug, Clone)]
 #[serde(default)]
-pub struct Config {
+pub struct HttpConfig {
     pub host: String,
     pub port: u16,
+    pub concurrency_limit: usize,
+    pub behind_proxy: bool,
+}
+
+impl Default for HttpConfig {
+    fn default() -> Self {
+        Self {
+            host: "0.0.0.0".to_string(),
+            port: 4040,
+            concurrency_limit: 512,
+            behind_proxy: false,
+        }
+    }
+}
+
+#[derive(Deserialize, Debug, Clone)]
+#[serde(default)]
+pub struct DatabaseConfig {
+    pub enable: bool,
+}
+
+impl Default for DatabaseConfig {
+    fn default() -> Self {
+        Self { enable: false }
+    }
+}
+
+#[derive(Deserialize, Debug, Clone)]
+#[serde(default)]
+pub struct Config {
+    pub http: HttpConfig,
+    pub logging: DatabaseConfig,
     pub upload_dir: String,
     pub temp_dir: String,
     pub prefix_length: usize,
     pub max_file_size: usize,
     pub max_file_name_length: usize,
     pub stats_interval: u64,
-    pub concurrency_limit: usize,
-    pub behind_proxy: bool,
+    pub fallocate: bool,
 }
 
 impl Default for Config {
     fn default() -> Self {
         Self {
-            host: "0.0.0.0".to_string(),
-            port: 4040,
             upload_dir: "files".to_string(),
             temp_dir: "temp".to_string(),
             prefix_length: 8,
             max_file_size: 1_000_000_000,
             max_file_name_length: 200,
             stats_interval: 60,
-            concurrency_limit: 512,
-            behind_proxy: false,
+            http: Default::default(),
+            logging: Default::default(),
+            fallocate: true,
         }
     }
 }
