@@ -4,6 +4,8 @@ Simple file sharing service written in Rust using [axum](https://github.com/toki
 
 Also see [floppa-files](https://github.com/gosher-studios/floppa-files).
 
+**This project is now in maintenance-only mode.**
+
 ## Features
 
 - Upload files
@@ -40,9 +42,6 @@ port=4040                 # port to listen on
 concurrency_limit=512     # max number of threads to launch for request handling,
                           # set to 0 for unlimited
 behind_proxy=false        # trust the X-Forwarded-For header
-
-[db]                      # database options (not implemented)
-enable=false              # enable database
 ```
 
 ## `fallocate(2)` support
@@ -53,11 +52,11 @@ This feature is only implemented for Linux targets.
 
 ## Todo
 
-- Compression
-- Better progress tracking for frontend
-- File expiration
-- Paste functionality
-- More stats
+[x] Compression
+[x] Better progress tracking for frontend
+[ ] File expiration
+[ ] Paste functionality
+[ ] More stats
 
 ### Non-goals
 

@@ -31,21 +31,8 @@ impl Default for HttpConfig {
 
 #[derive(Deserialize, Debug, Clone)]
 #[serde(default)]
-pub struct DatabaseConfig {
-    pub enable: bool,
-}
-
-impl Default for DatabaseConfig {
-    fn default() -> Self {
-        Self { enable: false }
-    }
-}
-
-#[derive(Deserialize, Debug, Clone)]
-#[serde(default)]
 pub struct Config {
     pub http: HttpConfig,
-    pub logging: DatabaseConfig,
     pub upload_dir: String,
     pub temp_dir: String,
     pub prefix_length: usize,
@@ -65,7 +52,6 @@ impl Default for Config {
             max_file_name_length: 200,
             stats_interval: 60,
             http: Default::default(),
-            logging: Default::default(),
             fallocate: true,
         }
     }
