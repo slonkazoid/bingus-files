@@ -30,16 +30,42 @@ impl Default for HttpConfig {
 }
 
 #[derive(Deserialize, Debug, Clone)]
+#[serde(untagged)]
+pub enum FileEnum {
+    Boolean(bool),
+    Path(String),
+}
+
+#[derive(Deserialize, Debug, Clone)]
+#[serde(default)]
+pub struct LoggingConfig {
+    pub level: String,
+    pub stderr: bool,
+    pub file: FileEnum,
+}
+
+impl Default for LoggingConfig {
+    fn default() -> Self {
+        Self {
+            level: "info".to_string(),
+            stderr: true,
+            file: FileEnum::Boolean(false),
+        }
+    }
+}
+
+#[derive(Deserialize, Debug, Clone)]
 #[serde(default)]
 pub struct Config {
     pub http: HttpConfig,
+    pub logging: LoggingConfig,
     pub upload_dir: String,
     pub temp_dir: String,
     pub prefix_length: usize,
     pub max_file_size: usize,
     pub max_file_name_length: usize,
     pub stats_interval: u64,
-    pub fallocate: bool,
+    pub allocate: bool,
 }
 
 impl Default for Config {
@@ -52,7 +78,8 @@ impl Default for Config {
             max_file_name_length: 200,
             stats_interval: 60,
             http: Default::default(),
-            fallocate: true,
+            logging: Default::default(),
+            allocate: true,
         }
     }
 }

@@ -3,7 +3,7 @@
 mod config;
 mod silly;
 
-use crate::config::Config;
+use crate::config::{Config, FileEnum, FindConfigError};
 use crate::silly::*;
 use anyhow::Result;
 use axum::{
@@ -17,17 +17,12 @@ use axum::{
 };
 use futures::TryStreamExt;
 use humansize::{format_size, DECIMAL};
-#[cfg(target_os = "linux")]
-#[cfg(feature = "fallocate")]
-use libc::{fallocate, strerror};
 use owo_colors::{OwoColorize, Stream::Stderr};
 use serde::Serialize;
-#[cfg(target_os = "linux")]
-#[cfg(feature = "fallocate")]
-use std::{ffi::CStr, os::fd::AsRawFd};
 use std::{
     fs::read_dir,
     path,
+    str::FromStr,
     sync::{Arc, RwLock},
     time::Duration,
 };
@@ -40,7 +35,8 @@ use tokio::{
 };
 use tokio_util::io::StreamReader;
 use tower::limit::ConcurrencyLimitLayer;
-use tower_http::{compression::Compression, services::ServeDir, trace::TraceLayer};
+use tower_http::{compression::Compression, services::ServeDir};
+use tracing::level_filters::LevelFilter;
 #[allow(unused_imports)]
 use tracing::{debug, error, info, trace, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -50,6 +46,8 @@ macro_rules! silly {
         (StatusCode::$code, StatusCode::$code.to_string())
     };
 }
+
+const DEFAULT_LOG_PATH: &str = "bingus-files_%Y-%m-%dT%H:%M:%S%:z.log";
 
 #[derive(Debug, Clone, Serialize)]
 struct Stats {
@@ -193,32 +191,14 @@ async fn upload(
             .open(&file_path)
             .await?;
 
-        if file_size > 0 {
-            #[cfg(target_os = "linux")]
-            #[cfg(feature = "fallocate")]
-            if state.config.fallocate {
-                unsafe {
-                    trace!(
-                        "fallocating {} for '{}'",
-                        format_size(file_size, DECIMAL),
-                        file_name
-                    );
-                    let fd = out_file.as_raw_fd();
+        if file_size > 0 && state.config.allocate {
+            debug!(
+                "allocating {} for '{}'",
+                format_size(file_size, DECIMAL),
+                file_name
+            );
 
-                    if fallocate(fd, 0, 0, file_size.try_into().unwrap()) == -1 {
-                        let errno = *libc::__errno_location();
-                        error!(
-                            "Error while fallocating: {}",
-                            CStr::from_ptr(strerror(errno)).to_string_lossy()
-                        );
-                        if errno == libc::ENOTSUP {
-                            warn!("Continuing anyways...");
-                        } else {
-                            return Err(io::Error::from_raw_os_error(errno));
-                        }
-                    }
-                };
-            }
+            out_file.set_len(file_size.try_into().unwrap()).await?;
         }
 
         let mut reader = StreamReader::new(
@@ -302,35 +282,63 @@ async fn logger(
 
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::registry()
-        .with(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "bingus_files=info".into()),
-        )
-        .with(tracing_subscriber::fmt::layer())
-        .init();
-
     let config = match config::load().await {
         Ok(config) => {
-            info!("Loaded configuration from {}", config.1.display());
+            eprintln!("Loaded configuration from {}", config.1.display());
             config.0
         }
         Err(error) => {
-            error!("Error loading configuration: {}", error);
-            info!("Using default configuration");
-            Config::default()
+            eprintln!("Error loading configuration: {}", error);
+            if error.is::<FindConfigError>()
+                && matches!(
+                    error.downcast::<FindConfigError>().unwrap(),
+                    FindConfigError::NoneFoundError
+                )
+            {
+                eprintln!("Using default configuration");
+                Config::default()
+            } else {
+                unimplemented!()
+            }
         }
     };
 
-    debug!("{:#?}", config);
+    tracing_subscriber::registry()
+        .with(LevelFilter::from_str(&config.logging.level).unwrap())
+        .with(if config.logging.stderr {
+            Some(tracing_subscriber::fmt::layer())
+        } else {
+            None
+        })
+        .with(
+            match &config.logging.file {
+                FileEnum::Boolean(value) => {
+                    if *value {
+                        Some(DEFAULT_LOG_PATH)
+                    } else {
+                        None
+                    }
+                }
+                FileEnum::Path(value) => Some(value.as_str()),
+            }
+            .map(|path| {
+                let time = chrono::Utc::now();
+                let path = time.format(path).to_string();
+                let file = std::fs::OpenOptions::new()
+                    .write(true)
+                    .append(true)
+                    .create(true)
+                    .open(path)
+                    .unwrap();
+                tracing_subscriber::fmt::layer()
+                    .json()
+                    .with_writer(file)
+                    .with_ansi(false)
+            }),
+        )
+        .init();
 
-    if config.fallocate {
-        #[cfg(not(feature = "fallocate"))]
-        warn!("the fallocate option requires the 'fallocate' feature");
-        #[cfg(not(target_os = "linux"))]
-        #[cfg(feature = "fallocate")]
-        warn!("the 'fallocate' feature only works on linux");
-    }
+    debug!("{:#?}", &config);
 
     if !try_exists(&config.upload_dir).await.unwrap() {
         debug!("Creating upload directory");
@@ -366,7 +374,6 @@ async fn main() {
         )
         .route("/stats", get(get_stats))
         .layer(from_fn_with_state(state.clone(), logger))
-        .layer(TraceLayer::new_for_http())
         .with_state(state.clone());
     let app = if config.http.concurrency_limit != 0 {
         app.layer(ConcurrencyLimitLayer::new(config.http.concurrency_limit))
