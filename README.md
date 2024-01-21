@@ -51,12 +51,6 @@ file=false                # enables logging to file (setting this to a string
                           # default path is bingus-files_%Y-%m-%dT%H:%M:%S%:z.log
 ```
 
-## `fallocate(2)` support
-
-bingus-files uses `fallocate(2)` to preallocate space for uploads.  
-You can turn this feature off by passing `--no-default-features` to `cargo`.  
-This feature is only implemented for Linux targets.
-
 ## Todo
 
 [x] Compression
