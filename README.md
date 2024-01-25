@@ -30,7 +30,7 @@ temp_dir="temp"           # unused at the moment
 prefix_length=8           # controls the length of the random prefix prepended to
                           # file names with a '.', set to 0 to disable
 max_file_size=1000000000  # self explanatory (1 GB)
-max_file_name_length=200  # self explanatory
+max_file_name_length=200  # max file name length (before prefix)
 stats_interval=60         # how many seconds to wait between stats refreshes,
                           # set to 0 to disable
 allocate=true             # preallocate space for uploads with Content-Length

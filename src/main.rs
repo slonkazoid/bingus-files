@@ -66,41 +66,32 @@ type ArcState = Arc<AppState>;
 
 #[derive(Debug, Error)]
 enum AppError {
-    #[error("Fuck you")]
-    FuckYou,
+    #[error("Bad request")]
+    BadRequest,
+    #[error("File name too long")]
+    NameTooLong,
     #[error("File was above max size")]
     FileAboveMaxSize,
     #[error("File already exists")]
     Conflict,
     #[error(transparent)]
-    IoError(io::Error),
-    /*#[error(transparent)]
-    Other(anyhow::Error),*/
+    IoError(#[from] io::Error),
 }
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         error!("{}", self);
         match self {
-            Self::FuckYou => silly!(BAD_REQUEST),
+            Self::BadRequest => silly!(BAD_REQUEST),
+            Self::NameTooLong => (StatusCode::BAD_REQUEST, "File name too long".to_string()),
             Self::FileAboveMaxSize => silly!(PAYLOAD_TOO_LARGE),
             Self::Conflict => silly!(CONFLICT),
             Self::IoError(err) => match err.kind() {
                 io::ErrorKind::FilesystemQuotaExceeded => silly!(INSUFFICIENT_STORAGE),
                 _ => silly!(INTERNAL_SERVER_ERROR),
             },
-            //_ => silly!(INTERNAL_SERVER_ERROR),
         }
         .into_response()
-    }
-}
-
-impl<E> From<E> for AppError
-where
-    E: Into<io::Error>,
-{
-    fn from(err: E) -> Self {
-        Self::IoError(err.into())
     }
 }
 
@@ -144,7 +135,7 @@ async fn upload(
         .and_then(|v| v.parse::<usize>().ok())
     {
         Some(content_length) => content_length,
-        None => return Err(AppError::FuckYou),
+        None => return Err(AppError::BadRequest),
     };
 
     if file_size > state.config.max_file_size {
@@ -152,7 +143,7 @@ async fn upload(
     }
 
     if path.len() > state.config.max_file_name_length {
-        return Err(AppError::FuckYou);
+        return Err(AppError::NameTooLong);
     }
 
     let file_name = if state.config.prefix_length > 0 {
@@ -325,7 +316,6 @@ async fn main() {
                 let time = chrono::Utc::now();
                 let path = time.format(path).to_string();
                 let file = std::fs::OpenOptions::new()
-                    .write(true)
                     .append(true)
                     .create(true)
                     .open(path)
