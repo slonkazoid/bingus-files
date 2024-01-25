@@ -153,7 +153,12 @@ async fn upload(
             sanitize_file_name(&path),
         )
     } else {
-        path
+        let new_name = sanitize_file_name(&path);
+        if new_name == "." || new_name == ".." {
+            return Err(AppError::BadRequest);
+        }
+        // TODO: con, prn, aux, etc. on windows
+        new_name
     };
 
     let file_path = path::Path::new(&state.config.upload_dir).join(&file_name);
