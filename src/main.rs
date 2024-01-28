@@ -301,20 +301,15 @@ async fn main() {
 
     tracing_subscriber::registry()
         .with(LevelFilter::from_str(&config.logging.level).unwrap())
-        .with(if config.logging.stderr {
-            Some(tracing_subscriber::fmt::layer())
-        } else {
-            None
-        })
+        .with(
+            config
+                .logging
+                .stderr
+                .then_some(tracing_subscriber::fmt::layer()),
+        )
         .with(
             match &config.logging.file {
-                FileEnum::Boolean(value) => {
-                    if *value {
-                        Some(DEFAULT_LOG_PATH)
-                    } else {
-                        None
-                    }
-                }
+                FileEnum::Boolean(value) => value.then_some(DEFAULT_LOG_PATH),
                 FileEnum::Path(value) => Some(value.as_str()),
             }
             .map(|path| {
