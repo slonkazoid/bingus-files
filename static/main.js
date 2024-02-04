@@ -19,9 +19,9 @@ const prettyMs = (n) => {
 const output = document.getElementById("output");
 const form = document.querySelector("form");
 const fileInput = document.querySelector("input[type=file]");
-const maxUploadSizeSpan = document.getElementById("maxUploadSize");
-const filesStoredSpan = document.getElementById("filesStored");
-const storageUsedSpan = document.getElementById("storageUsed");
+const maxUploadSizeSpan = document.getElementById("max-upload-size");
+const filesStoredSpan = document.getElementById("files-stored");
+const storageUsedSpan = document.getElementById("storage-used");
 let maxFileSize = 0;
 
 function log(str) {

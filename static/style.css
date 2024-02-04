@@ -64,9 +64,9 @@ progress {
 	background-color: var(--ctp-latte-pink);
 }
 
-#maxUploadSize,
-#filesStored,
-#storageUsed {
+#max-upload-size,
+#files-stored,
+#storage-used {
 	font-weight: bold;
 }
 
