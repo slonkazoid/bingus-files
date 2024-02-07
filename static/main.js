@@ -98,7 +98,10 @@ fileInput.addEventListener("change", async () => {
 
 	let placeholder = document.getElementById("output-placeholder");
 	if (placeholder instanceof Element) placeholder.replaceWith(progressDiv);
-	else output.append(progressDiv);
+	else {
+		output.append(document.createElement("hr"));
+		output.append(progressDiv);
+	}
 
 	let logged = log(
 		`uploading ${fileCount} file${
@@ -197,6 +200,7 @@ fileInput.addEventListener("change", async () => {
 						(snapshot) => snapshot.ts + sampleSize >= now
 					);
 
+					// the rate is in bytes/millisecond
 					let localRate =
 						localFirstSnapshot === undefined
 							? 0
@@ -263,10 +267,21 @@ fileInput.addEventListener("change", async () => {
 		}
 	}
 
+	let time = performance.now() - start;
+	let firstSnapshot = rateCalcMagicArray[0];
+	let totalUploaded = 0;
+	if (typeof firstSnapshot === "object") {
+		let lastSnapshot = rateCalcMagicArray.pop();
+		totalUploaded = lastSnapshot.total;
+	}
+	let rate = totalUploaded / time;
+
 	let p = document.createElement("p");
 	p.innerText = `uploaded ${
 		fileCount - errors
-	}/${fileCount} files in ${prettyMs(performance.now() - start)}`;
+	}/${fileCount} files (${prettyFileSize(totalUploaded)}/${prettyFileSize(
+		totalSize
+	)}) in ${prettyMs(time)} (${prettyFileSize(rate * 1000)}/s)`;
 	logged.replaceWith(p);
 	progressDiv.remove();
 	updateStats();

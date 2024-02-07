@@ -4,7 +4,6 @@
 :root {
 	--base: var(--ctp-latte-base);
 	--text: var(--ctp-latte-text);
-	--crust: var(--ctp-latte-crust);
 	--surface0: var(--ctp-latte-surface0);
 	--subtext0: var(--ctp-latte-subtext0);
 	--subtext1: var(--ctp-latte-subtext1);
@@ -18,7 +17,6 @@
 	:root {
 		--base: var(--ctp-mocha-base);
 		--text: var(--ctp-mocha-text);
-		--crust: var(--ctp-mocha-crust);
 		--surface0: var(--ctp-mocha-surface0);
 		--subtext0: var(--ctp-mocha-subtext0);
 		--subtext1: var(--ctp-mocha-subtext1);
@@ -37,7 +35,11 @@
 }
 
 main {
-	border-color: var(--crust);
+	border-color: var(--text);
+}
+
+hr {
+	color: var(--text);
 }
 
 code {
