@@ -1,45 +1,74 @@
 @import url("catppuccin.css");
 
+/* colors */
+:root {
+	--base: var(--ctp-latte-base);
+	--text: var(--ctp-latte-text);
+	--crust: var(--ctp-latte-crust);
+	--surface0: var(--ctp-latte-surface0);
+	--subtext0: var(--ctp-latte-subtext0);
+	--subtext1: var(--ctp-latte-subtext1);
+	--pink: var(--ctp-latte-pink);
+	--rosewater: var(--ctp-latte-rosewater);
+	--blue: var(--ctp-latte-blue);
+	--mauve: var(--ctp-latte-mauve);
+}
+
+@media (prefers-color-scheme: dark) {
+	:root {
+		--base: var(--ctp-mocha-base);
+		--text: var(--ctp-mocha-text);
+		--crust: var(--ctp-mocha-crust);
+		--surface0: var(--ctp-mocha-surface0);
+		--subtext0: var(--ctp-mocha-subtext0);
+		--subtext1: var(--ctp-mocha-subtext1);
+		--pink: var(--ctp-mocha-pink);
+		--rosewater: var(--ctp-mocha-rosewater);
+		--blue: var(--ctp-mocha-blue);
+		--mauve: var(--ctp-mocha-mauve);
+	}
+}
+
 :root {
 	font-family: "Hack Nerd Font", "Hack", monospace, sans-serif;
 
-	background-color: var(--ctp-latte-base);
-	color: var(--ctp-latte-text);
+	background-color: var(--base);
+	color: var(--text);
 }
 
 main {
-	border-color: var(--ctp-latte-crust);
+	border-color: var(--crust);
 }
 
 code {
 	line-height: 2em;
 	padding: 0.25em 0.5em;
 
-	background-color: var(--ctp-latte-surface0);
-	color: var(--ctp-latte-subtext1);
+	background-color: var(--surface0);
+	color: var(--subtext1);
 }
 
 #output {
 	padding: 0.5em 1em;
 	display: block;
 
-	color: var(--ctp-latte-subtext0);
+	color: var(--subtext0);
 }
 
 a {
-	color: var(--ctp-latte-pink);
+	color: var(--pink);
 }
 
 a:hover {
-	color: var(--ctp-latte-rosewater);
+	color: var(--rosewater);
 }
 
 a:active {
-	color: var(--ctp-latte-blue);
+	color: var(--blue);
 }
 
 a:visited {
-	color: var(--ctp-latte-mauve);
+	color: var(--mauve);
 }
 
 #file {
@@ -54,63 +83,20 @@ progress {
 	width: 100%;
 	border: 2px solid;
 
-	border-color: var(--ctp-latte-text);
-	background-color: var(--ctp-latte-base);
-	color: var(--ctp-latte-pink);
+	border-color: var(--text);
+	background-color: var(--base);
+	color: var(--pink);
 }
 
 ::-moz-progress-bar,
 ::-webkit-progress-bar {
-	background-color: var(--ctp-latte-pink);
+	background-color: var(--pink);
 }
 
 #max-upload-size,
 #files-stored,
 #storage-used {
 	font-weight: bold;
-}
-
-@media (prefers-color-scheme: dark) {
-	:root {
-		background-color: var(--ctp-mocha-base);
-		color: var(--ctp-mocha-text);
-	}
-
-	code {
-		background-color: var(--ctp-mocha-surface0);
-		color: var(--ctp-mocha-subtext1);
-	}
-
-	#output {
-		color: var(--ctp-mocha-subtext0);
-	}
-
-	a {
-		color: var(--ctp-mocha-pink);
-	}
-
-	a:hover {
-		color: var(--ctp-mocha-rosewater);
-	}
-
-	a:active {
-		color: var(--ctp-mocha-blue);
-	}
-
-	a:visited {
-		color: var(--ctp-mocha-mauve);
-	}
-
-	progress {
-		border-color: var(--ctp-mocha-text);
-		background-color: var(--ctp-mocha-base);
-		color: var(--ctp-mocha-pink);
-	}
-
-	::-moz-progress-bar,
-	::-webkit-progress-bar {
-		background-color: var(--ctp-mocha-pink);
-	}
 }
 
 @media (min-width: 992px) {
