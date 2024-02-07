@@ -162,7 +162,7 @@ dependencies = [
 
 [[package]]
 name = "bingus-files"
-version = "3.3.1"
+version = "3.3.2"
 dependencies = [
  "anyhow",
  "axum",
