@@ -1,6 +1,23 @@
-use axum::http::HeaderMap;
+use axum::{
+    http::HeaderMap,
+    response::{IntoResponse, Response},
+};
 use owo_colors::Style;
 use rand::Rng;
+
+pub struct Slonkable<T: serde::Serialize>(T);
+impl<T: serde::Serialize> From<T> for Slonkable<T> {
+    fn from(value: T) -> Self {
+        Self(value)
+    }
+}
+impl<T: serde::Serialize> IntoResponse for Slonkable<T> {
+    fn into_response(self) -> Response {
+        serde_json::to_string(&self.0)
+            .map_err(|x| x.to_string())
+            .into_response()
+    }
+}
 
 pub fn sanitize_file_name(name: &str) -> String {
     name.replace(

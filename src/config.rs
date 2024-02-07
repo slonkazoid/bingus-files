@@ -62,7 +62,7 @@ pub struct Config {
     pub upload_dir: String,
     pub temp_dir: String,
     pub prefix_length: usize,
-    pub max_file_size: usize,
+    pub max_file_size: u64,
     pub max_file_name_length: usize,
     pub stats_interval: u64,
     pub allocate: bool,

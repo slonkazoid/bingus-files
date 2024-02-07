@@ -8,7 +8,7 @@ use crate::silly::*;
 use anyhow::Result;
 use axum::{
     body::Body,
-    extract::{ConnectInfo, DefaultBodyLimit, Path, Request, State},
+    extract::{ConnectInfo, Path, Request, State},
     http::{HeaderMap, StatusCode},
     middleware::{from_fn_with_state, Next},
     response::{IntoResponse, Response},
@@ -51,7 +51,7 @@ const DEFAULT_LOG_PATH: &str = "bingus-files_%Y-%m-%dT%H:%M:%S%:z.log";
 
 #[derive(Debug, Clone, Serialize)]
 struct Stats {
-    pub max_file_size: usize,
+    pub max_file_size: u64,
     pub files_stored: u64,
     pub storage_used: u64,
 }
@@ -118,8 +118,8 @@ fn refresh_stats(config: &Config) -> Result<Stats> {
     })
 }
 
-async fn get_stats(State(state): State<ArcState>) -> String {
-    serde_json::to_string(&*state.stats.read().unwrap()).unwrap()
+async fn get_stats(State(state): State<ArcState>) -> Slonkable<Stats> {
+    state.stats.read().unwrap().clone().into()
 }
 
 async fn upload(
@@ -132,7 +132,7 @@ async fn upload(
     let file_size = match headers
         .get("content-length")
         .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.parse::<usize>().ok())
+        .and_then(|v| v.parse::<u64>().ok())
     {
         Some(content_length) => content_length,
         None => return Err(AppError::BadRequest),
@@ -183,7 +183,7 @@ async fn upload(
         let mut out_file = tokio::fs::OpenOptions::new()
             .write(true)
             .create(true)
-            .append(false)
+            .truncate(true)
             .open(&file_path)
             .await?;
 
@@ -194,7 +194,7 @@ async fn upload(
                 file_name
             );
 
-            out_file.set_len(file_size.try_into().unwrap()).await?;
+            out_file.set_len(file_size).await?;
         }
 
         let mut reader = StreamReader::new(
@@ -207,7 +207,7 @@ async fn upload(
         let mut stats = state.stats.write().unwrap();
 
         stats.files_stored += 1;
-        stats.max_file_size += file_size;
+        stats.storage_used += file_size;
 
         Ok::<_, io::Error>(())
     }
@@ -354,12 +354,7 @@ async fn main() {
         .nest_service(
             "/",
             get_service(serve_static).fallback_service(
-                Router::new().route(
-                    "/:file",
-                    put(upload)
-                        .layer(DefaultBodyLimit::max(config.max_file_size))
-                        .with_state(state.clone()),
-                ),
+                Router::new().route("/:file", put(upload).with_state(state.clone())),
             ),
         )
         .route("/stats", get(get_stats))
