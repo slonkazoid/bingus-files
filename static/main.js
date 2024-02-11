@@ -64,20 +64,16 @@ async function updateStats() {
 
 await updateStats();
 
-form.addEventListener("submit", (e) => {
-	fileInput.dispatchEvent(new Event("change"));
-	e.preventDefault();
-});
-
-fileInput.addEventListener("change", async () => {
+/* @param {FileList} files */
+async function uploadFiles(files) {
 	let start = performance.now();
 
 	let totalSize = 0;
-	for (let file of fileInput.files) {
+	for (let file of files) {
 		totalSize += file.size;
 	}
-	let fileCount = fileInput.files.length;
-	console.log(fileCount, prettyFileSize(totalSize), fileInput.files);
+	let fileCount = files.length;
+	console.log(fileCount, prettyFileSize(totalSize), files);
 
 	let /** @type {rateSnapshot[]} */ rateCalcMagicArray = [];
 	let progressDiv = document.createElement("div");
@@ -90,7 +86,7 @@ fileInput.addEventListener("change", async () => {
 	progressDiv.append(progressBar);
 
 	let progressText = document.createElement("span");
-	progressText.innerText = `0 B/${prettyFileSize(file.size)}`;
+	progressText.innerText = `0 B/${prettyFileSize(totalSize)}`;
 	progressText.style.float = "right";
 	progressText.style["margin-left"] = "0.5em";
 	progressText.title = `rate is sampled from last ${prettyMs(sampleSize)}`;
@@ -109,20 +105,19 @@ fileInput.addEventListener("change", async () => {
 		} (${prettyFileSize(totalSize)} total)`
 	);
 
-	let errors = 0;
+	let links = [];
 
 	let messages = [];
 
-	for (let file of fileInput.files)
+	for (let file of files)
 		messages.push(
 			log(`ẁaiting to upload ${file.name} (${prettyFileSize(file.size)})`)
 		);
 
 	for (let i = 0; i < fileCount; i++) {
-		let file = fileInput.files[i];
+		let file = files[i];
 
 		if (file.size > maxFileSize) {
-			errors++;
 			messages[i].innerText = `${
 				file.name
 			} is bigger than max file size (${prettyFileSize(
@@ -238,8 +233,9 @@ fileInput.addEventListener("change", async () => {
 				req.send(file);
 			});
 		} catch (err) {
-			errors++;
+			let p = document.createElement("p");
 			p.append(`failed to upload file. see the console for more details`);
+			logged.replaceWith(p);
 			console.error(err);
 			continue;
 		}
@@ -249,7 +245,9 @@ fileInput.addEventListener("change", async () => {
 			let p = document.createElement("p");
 			p.append("uploaded ");
 			let a = document.createElement("a");
-			a.href = `${location.origin}/${fileName}`;
+			let link = new URL(fileName, location.origin);
+			a.href = link;
+			links.push(link);
 			a.innerText = fileName;
 			p.append(a);
 			p.append(` (${prettyMs(performance.now() - start)})`);
@@ -257,7 +255,6 @@ fileInput.addEventListener("change", async () => {
 			progressBar.value = parseFloat(progressBar.value) + 1;
 			updateStats();
 		} else {
-			errors++;
 			console.error(res.status, res.statusText);
 			let p = document.createElement("p");
 			p.append(
@@ -278,13 +275,46 @@ fileInput.addEventListener("change", async () => {
 
 	let p = document.createElement("p");
 	p.innerText = `uploaded ${
-		fileCount - errors
+		links.length
 	}/${fileCount} files (${prettyFileSize(totalUploaded)}/${prettyFileSize(
 		totalSize
 	)}) in ${prettyMs(time)} (${prettyFileSize(rate * 1000)}/s)`;
+
+	if (links.length > 0) {
+		let button = document.createElement("button");
+		button.innerText = links.length > 1 ? "copy all" : "copy";
+		button.onclick = () => {
+			navigator.clipboard.writeText(links.join("\n "));
+			button.style.setProperty("border-color", "var(--mauve)");
+		};
+		p.append(document.createTextNode(" "));
+		p.append(button);
+	}
+
 	logged.replaceWith(p);
 	progressDiv.remove();
 	updateStats();
+}
+
+form.addEventListener("submit", (e) => {
+	fileInput.dispatchEvent(new Event("change"));
+	e.preventDefault();
 });
 
-setInterval(updateStats, 15000);
+fileInput.addEventListener("change", () => uploadFiles(fileInput.files));
+
+document.addEventListener("drop", (e) => {
+	e.preventDefault();
+
+	uploadFiles(
+		e.dataTransfer.items === undefined
+			? e.dataTransfer.files
+			: [...e.dataTransfer.items]
+					.filter((item) => item.kind === "file")
+					.map((item) => item.getAsFile())
+	);
+});
+
+document.addEventListener("dragover", (e) => e.preventDefault());
+
+setInterval(updateStats, 60000);

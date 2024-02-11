@@ -1,4 +1,10 @@
-#![feature(async_closure, fs_try_exists, io_error_more, let_chains)]
+#![feature(
+    async_closure,
+    fs_try_exists,
+    io_error_more,
+    let_chains,
+    addr_parse_ascii
+)]
 
 mod config;
 mod silly;
@@ -19,6 +25,7 @@ use futures::TryStreamExt;
 use humansize::{format_size, DECIMAL};
 use owo_colors::{OwoColorize, Stream::Stderr};
 use serde::Serialize;
+use std::net::IpAddr;
 use std::{
     fs::read_dir,
     path,
@@ -37,8 +44,7 @@ use tokio_util::io::StreamReader;
 use tower::limit::ConcurrencyLimitLayer;
 use tower_http::{compression::Compression, services::ServeDir};
 use tracing::level_filters::LevelFilter;
-#[allow(unused_imports)]
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, error, info, trace};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 macro_rules! silly {
@@ -249,10 +255,11 @@ async fn logger(
 ) -> Response {
     let ip = if state.config.http.behind_proxy {
         get_ip(request.headers())
+            .and_then(|x| IpAddr::parse_ascii(x.as_bytes()).ok())
+            .unwrap_or_else(|| connect_info.ip())
     } else {
-        None
-    }
-    .unwrap_or_else(|| connect_info.ip().to_string());
+        connect_info.ip()
+    };
 
     let path = request.uri().path().to_owned();
     let method = request.method().to_owned();

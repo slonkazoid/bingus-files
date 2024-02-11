@@ -1,33 +1,35 @@
-@import url("catppuccin.css");
+/* colors by catppuccin
+   https://github.com/catppuccin/catppuccin */
 
-/* colors */
 :root {
-	--base: var(--ctp-latte-base);
-	--text: var(--ctp-latte-text);
-	--surface0: var(--ctp-latte-surface0);
-	--subtext0: var(--ctp-latte-subtext0);
-	--subtext1: var(--ctp-latte-subtext1);
-	--pink: var(--ctp-latte-pink);
-	--rosewater: var(--ctp-latte-rosewater);
-	--blue: var(--ctp-latte-blue);
-	--mauve: var(--ctp-latte-mauve);
+	--base: #1e1e2e;
+	--text: #cdd6f4;
+	--surface0: #313244;
+	--surface1: #45475a;
+	--subtext0: #a6adc8;
+	--subtext1: #bac2de;
+	--pink: #f5c2e7;
+	--rosewater: #f5e0dc;
+	--blue: #89b4fa;
+	--mauve: #cba6f7;
 }
 
-@media (prefers-color-scheme: dark) {
+@media (prefers-color-scheme: light) {
 	:root {
-		--base: var(--ctp-mocha-base);
-		--text: var(--ctp-mocha-text);
-		--surface0: var(--ctp-mocha-surface0);
-		--subtext0: var(--ctp-mocha-subtext0);
-		--subtext1: var(--ctp-mocha-subtext1);
-		--pink: var(--ctp-mocha-pink);
-		--rosewater: var(--ctp-mocha-rosewater);
-		--blue: var(--ctp-mocha-blue);
-		--mauve: var(--ctp-mocha-mauve);
+		--base: #eff1f5;
+		--text: #4c4f69;
+		--surface0: #ccd0da;
+		--surface1: #bcc0cc;
+		--subtext0: #6c6f85;
+		--subtext1: #5c5f77;
+		--pink: #ea76cb;
+		--rosewater: #dc8a78;
+		--blue: #1e66f5;
+		--mauve: #8839ef;
 	}
 }
 
-:root {
+body {
 	font-family: "Hack", "Hack Nerd Font", "JetBrains Mono",
 		"JetBrainsMono Nerd Font", monospace, sans-serif;
 
@@ -74,12 +76,20 @@ a:visited {
 	color: var(--mauve);
 }
 
-#file {
-	font-size: larger;
-	padding: 1em;
-	border: none;
+label.upload {
 	display: block;
-	text-align: center;
+
+	& > input[type="file"] {
+		position: absolute !important;
+		height: 1px;
+		width: 1px;
+		overflow: hidden;
+		clip: rect(1px, 1px, 1px, 1px);
+	}
+	& > .button {
+		font-size: x-large;
+		font-weight: bold;
+	}
 }
 
 progress {
@@ -100,6 +110,26 @@ progress {
 #files-stored,
 #storage-used {
 	font-weight: bold;
+}
+
+button,
+.button {
+	padding: 0.25em 0.5em;
+	font-weight: bold;
+	background-color: var(--surface0);
+	color: var(--subtext0);
+	user-select: none;
+	border-radius: 0;
+	border: 1px solid var(--pink);
+
+	&:hover {
+		border-color: var(--rosewater);
+	}
+	&:active {
+		border-color: var(--blue);
+		background-color: var(--surface1);
+		color: var(--subtext1);
+	}
 }
 
 @media (min-width: 992px) {
