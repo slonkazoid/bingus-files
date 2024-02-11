@@ -282,12 +282,12 @@ async function uploadFiles(files) {
 
 	if (links.length > 0) {
 		let button = document.createElement("button");
+		button.style.marginLeft = "1em";
 		button.innerText = links.length > 1 ? "copy all" : "copy";
 		button.onclick = () => {
 			navigator.clipboard.writeText(links.join(" \n"));
 			button.style.setProperty("border-color", "var(--mauve)");
 		};
-		p.append(document.createTextNode(" "));
 		p.append(button);
 	}
 
