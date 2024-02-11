@@ -284,7 +284,7 @@ async function uploadFiles(files) {
 		let button = document.createElement("button");
 		button.innerText = links.length > 1 ? "copy all" : "copy";
 		button.onclick = () => {
-			navigator.clipboard.writeText(links.join("\n "));
+			navigator.clipboard.writeText(links.join(" \n"));
 			button.style.setProperty("border-color", "var(--mauve)");
 		};
 		p.append(document.createTextNode(" "));
