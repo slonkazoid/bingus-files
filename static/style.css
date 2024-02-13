@@ -120,7 +120,7 @@ button,
 	color: var(--subtext0);
 	user-select: none;
 	border-radius: 0;
-	border: 1px solid var(--pink);
+	border: 2px solid var(--pink);
 
 	&:hover {
 		border-color: var(--rosewater);
