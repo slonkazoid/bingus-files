@@ -1,8 +1,4 @@
-/**
- * @typedef {Object} rateSnapshot snapshot of upload progress
- * @property {number} ts when the snapshot was taken, `performance.now`
- * @property {number} total total uploaded bytes at the time of snapshot
- */
+import RateCalc from "./rateCalc.js";
 
 // constants
 const output = document.getElementById("output");
@@ -43,7 +39,7 @@ const prettyMs = (n) => {
 	return f.join(" ");
 };
 
-function log(str) {
+function log(str, output = output) {
 	let element = document.createElement("p");
 	element.innerText = str;
 	output.append(element);
@@ -68,6 +64,7 @@ await updateStats();
 async function uploadFiles(files) {
 	let start = performance.now();
 
+	let totalUploaded = 0;
 	let totalSize = 0;
 	for (let file of files) {
 		totalSize += file.size;
@@ -75,43 +72,46 @@ async function uploadFiles(files) {
 	let fileCount = files.length;
 	console.log(fileCount, prettyFileSize(totalSize), files);
 
-	let /** @type {rateSnapshot[]} */ rateCalcMagicArray = [];
+	let newOutput = document.createElement("div");
+
+	let rateCalc = new RateCalc();
 	let progressDiv = document.createElement("div");
 
 	let progressBar = document.createElement("progress");
-	progressBar.style.width = "50%";
-	progressBar.style.display = "inline";
 	progressBar.max = totalSize;
 	progressBar.value = "0";
 	progressDiv.append(progressBar);
 
 	let progressText = document.createElement("span");
+	progressText.classList.add("progress-text");
 	progressText.innerText = `0 B/${prettyFileSize(totalSize)}`;
-	progressText.style.float = "right";
-	progressText.style["margin-left"] = "0.5em";
 	progressText.title = `rate is sampled from last ${prettyMs(sampleSize)}`;
 	progressDiv.append(progressText);
+	newOutput.append(progressDiv);
 
 	let placeholder = document.getElementById("output-placeholder");
-	if (placeholder instanceof Element) placeholder.replaceWith(progressDiv);
+	if (placeholder instanceof Element) placeholder.replaceWith(newOutput);
 	else {
-		output.append(document.createElement("hr"));
-		output.append(progressDiv);
+		output.insertBefore(document.createElement("hr"), output.firstChild);
+		output.insertBefore(newOutput, output.firstChild);
 	}
 
 	let logged = log(
 		`uploading ${fileCount} file${
 			fileCount == 1 ? "" : "s"
-		} (${prettyFileSize(totalSize)} total)`
+		} (${prettyFileSize(totalSize)} total)`,
+		newOutput
 	);
 
 	let links = [];
-
 	let messages = [];
 
 	for (let file of files)
 		messages.push(
-			log(`ẁaiting to upload ${file.name} (${prettyFileSize(file.size)})`)
+			log(
+				`waiting to upload ${file.name} (${prettyFileSize(file.size)})`,
+				newOutput
+			)
 		);
 
 	for (let i = 0; i < fileCount; i++) {
@@ -139,28 +139,25 @@ async function uploadFiles(files) {
 		let localDiv = document.createElement("div");
 
 		let localProgressBar = document.createElement("progress");
-		localProgressBar.style.width = "50%";
-		localProgressBar.style.display = "inline";
 		localProgressBar.max = file.size;
 		localProgressBar.value = "0";
 		localDiv.append(localProgressBar);
 
 		let localProgressText = document.createElement("span");
+		localProgressText.classList.add("progress-text");
 		localProgressText.innerText = `0 B/${prettyFileSize(file.size)}`;
-		localProgressText.style.float = "right";
-		localProgressText.style["margin-left"] = "0.5em";
-		localProgressText.title = "rate is sampled from last 15 seconds";
+		localProgressText.title = `rate is sampled from last ${prettyMs(
+			sampleSize
+		)}`;
 		localDiv.append(localProgressText);
 
 		let /** @type {XMLHttpRequest} */ res;
 		try {
 			// i love callbacks
 			res = await new Promise((resolve, reject) => {
-				let /** @type {rateSnapshot[]} */ localRateCalcMagicArray = [];
-				let /** @type {number} */ localUploadStart;
+				let localRateCalc = new RateCalc();
 
 				let startBytes = parseInt(progressBar.value);
-				let rateCalcMagicArrayStartIndex = rateCalcMagicArray.length;
 
 				let req = new XMLHttpRequest();
 				req.open("PUT", new URL(file.name, location.origin));
@@ -172,64 +169,38 @@ async function uploadFiles(files) {
 					let ratio = (startBytes + e.loaded) / totalSize;
 					let now = performance.now();
 
-					// local is for current file,
-					// the regular one is for the current upload group
-					let localSnapshot = {
+					localRateCalc.snapshot({
 						ts: now,
 						total: e.loaded,
-					};
-					let snapshot = {
+					});
+					rateCalc.snapshot({
 						ts: now,
 						total: startBytes + e.loaded,
-					};
+					});
 
-					localRateCalcMagicArray.push(localSnapshot);
-					rateCalcMagicArray.push(snapshot);
-
-					let localFirstSnapshot = rateCalcMagicArray.find(
-						(snapshot, index) =>
-							index >= rateCalcMagicArrayStartIndex &&
-							snapshot.ts + sampleSize >= now
-					);
-					let firstSnapshot = rateCalcMagicArray.find(
-						(snapshot) => snapshot.ts + sampleSize >= now
-					);
-
-					// the rate is in bytes/millisecond
-					let localRate =
-						localFirstSnapshot === undefined
-							? 0
-							: (e.loaded - localFirstSnapshot.total) /
-							  (now - localFirstSnapshot.ts);
-					let rate =
-						firstSnapshot === undefined
-							? 0
-							: (startBytes + e.loaded - firstSnapshot.total) /
-							  (now - firstSnapshot.ts);
+					let localRate = localRateCalc.rate();
+					let rate = rateCalc.rate();
 
 					localProgressText.innerText = `${prettyFileSize(
 						e.loaded
 					)}/${prettyFileSize(file.size)} (${(
 						localRatio * 100
-					).toFixed(2)}%) ${prettyFileSize(localRate * 1000)}/s`;
+					).toFixed(2)}%) ${prettyFileSize(localRate)}/s`;
 					progressText.innerText = `${prettyFileSize(
 						startBytes + e.loaded
 					)}/${prettyFileSize(totalSize)} (${(ratio * 100).toFixed(
 						2
-					)}%) ${prettyFileSize(rate * 1000)}/s`;
+					)}%) ${prettyFileSize(rate)}/s`;
 				});
 				req.addEventListener("loadstart", () => {
-					localUploadStart = performance.now();
-					rateCalcMagicArray.push({
-						ts: localUploadStart,
-						total: 0,
-					});
 					logged.appendChild(localDiv);
 				});
 				req.addEventListener("error", () => reject(req));
 				req.addEventListener("abort", () => reject(req));
 				req.addEventListener("load", () => resolve(req));
-				req.addEventListener("loadend", () => localDiv.remove());
+				req.addEventListener("loadend", (e) => {
+					totalUploaded += e.loaded;
+				});
 				req.send(file);
 			});
 		} catch (err) {
@@ -257,7 +228,9 @@ async function uploadFiles(files) {
 		} else if (res.status === 413) {
 			let p = document.createElement("p");
 			p.append(
-				`failed to upload file: 413 Content Too Large. is the server behind cloudflare? if not, contact the administrator and tell them their reverse proxy might be limiting request body size to below bingus-files's max file size`
+				`failed to upload file: ${res.status} ${
+					res.statusText ?? "Content Too Large"
+				}. is the server behind cloudflare? if not, contact the administrator and tell them their reverse proxy might be limiting request body size to below bingus-files's max file size`
 			);
 			logged.replaceWith(p);
 		} else {
@@ -270,21 +243,14 @@ async function uploadFiles(files) {
 		}
 	}
 
-	let time = performance.now() - start;
-	let firstSnapshot = rateCalcMagicArray[0];
-	let totalUploaded = 0;
-	if (typeof firstSnapshot === "object") {
-		let lastSnapshot = rateCalcMagicArray.pop();
-		totalUploaded = lastSnapshot.total;
-	}
-	let rate = totalUploaded / time;
+	let rate = rateCalc.rate();
 
 	let p = document.createElement("p");
 	p.innerText = `uploaded ${
 		links.length
 	}/${fileCount} files (${prettyFileSize(totalUploaded)}/${prettyFileSize(
 		totalSize
-	)}) in ${prettyMs(time)} (${prettyFileSize(rate * 1000)}/s)`;
+	)}) in ${prettyMs(performance.now() - start)} (${prettyFileSize(rate)}/s)`;
 
 	if (links.length > 0) {
 		let button = document.createElement("button");

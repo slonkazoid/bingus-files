@@ -141,3 +141,13 @@ button,
 		width: 75%;
 	}
 }
+
+progress {
+	width: 50%;
+	display: inline;
+}
+
+.progress-text {
+	float: right;
+	margin-left: 0.5em;
+}
