@@ -254,11 +254,17 @@ async function uploadFiles(files) {
 			logged.replaceWith(p);
 			progressBar.value = parseFloat(progressBar.value) + 1;
 			updateStats();
+		} else if (res.status === 413) {
+			let p = document.createElement("p");
+			p.append(
+				`failed to upload file: 413 Content Too Large. is the server behind cloudflare? if not, contact the administrator and tell them their reverse proxy might be limiting request body size to below bingus-files's max file size`
+			);
+			logged.replaceWith(p);
 		} else {
 			console.error(res.status, res.statusText);
 			let p = document.createElement("p");
 			p.append(
-				`failed to upload file: ${res.statusText}. see the console for more details`
+				`failed to upload file: ${res.status} ${res.statusText}. see the console for more details`
 			);
 			logged.replaceWith(p);
 		}
