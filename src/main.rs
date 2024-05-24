@@ -243,7 +243,7 @@ async fn upload(
 
         Err(err.into())
     } else {
-        Ok(file_name)
+        Ok(urlencoding::encode(&file_name).to_string())
     }
 }
 
