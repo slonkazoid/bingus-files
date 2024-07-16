@@ -129,7 +129,7 @@ pub fn find_config() -> Result<PathBuf, FindConfigError> {
         ];
         for path in locations {
             debug!("checking if configuration exists at: {}", path.display());
-            if fs::try_exists(&path)? {
+            if fs::exists(&path)? {
                 return Ok(path);
             }
         }

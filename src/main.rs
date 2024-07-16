@@ -1,10 +1,4 @@
-#![feature(
-    async_closure,
-    fs_try_exists,
-    io_error_more,
-    let_chains,
-    addr_parse_ascii
-)]
+#![feature(async_closure, io_error_more, let_chains, addr_parse_ascii)]
 
 mod config;
 mod silly;
