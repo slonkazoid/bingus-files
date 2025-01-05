@@ -1,4 +1,4 @@
-#![feature(async_closure, io_error_more, let_chains, addr_parse_ascii)]
+#![feature(io_error_more, let_chains, addr_parse_ascii)]
 
 mod config;
 mod silly;
@@ -87,7 +87,7 @@ impl IntoResponse for AppError {
             Self::FileAboveMaxSize => silly!(PAYLOAD_TOO_LARGE),
             Self::Conflict => silly!(CONFLICT),
             Self::IoError(err) => match err.kind() {
-                io::ErrorKind::FilesystemQuotaExceeded => silly!(INSUFFICIENT_STORAGE),
+                io::ErrorKind::StorageFull => silly!(INSUFFICIENT_STORAGE),
                 _ => silly!(INTERNAL_SERVER_ERROR),
             },
         }
